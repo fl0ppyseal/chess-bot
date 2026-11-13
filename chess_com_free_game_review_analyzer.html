@@ -1,0 +1,2731 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChessReview.io — Free Chess.com Game Review & Opening Analyzer</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- Chess.js for legal move parsing, SAN conversion & tactical validation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            chess: {
+              bg: '#302e2b',
+              panel: '#262522',
+              panelDark: '#1f1e1b',
+              panelLight: '#383633',
+              border: '#3d3b38',
+              green: '#81b64c',
+              greenHover: '#95c95f',
+              greenDark: '#5d8736',
+              lightSq: '#ebecd0',
+              darkSq: '#739552',
+              brilliant: '#1baca6',
+              great: '#5c8bb0',
+              best: '#81b64c',
+              excellent: '#81b64c',
+              good: '#95b776',
+              book: '#a88865',
+              inaccuracy: '#f7c631',
+              mistake: '#ffa459',
+              miss: '#ff7769',
+              blunder: '#fa412d'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      background-color: #302e2b;
+      color: #e5e5e5;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    /* Custom scrollbars matching Chess.com dark UI */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1f1e1b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #4b4844;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #66635e;
+    }
+
+    /* 3D Chess.com Green Primary Button */
+    .btn-chess-green {
+      background: linear-gradient(180deg, #88bf52 0%, #73a63e 100%);
+      box-shadow: 0 4px 0 #537a2b, 0 4px 10px rgba(0,0,0,0.35);
+      transition: all 0.12s ease;
+    }
+    .btn-chess-green:hover {
+      background: linear-gradient(180deg, #95cc5e 0%, #7eb346 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 5px 0 #537a2b, 0 6px 14px rgba(0,0,0,0.4);
+    }
+    .btn-chess-green:active {
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 #537a2b;
+    }
+
+    .btn-chess-secondary {
+      background: #383633;
+      box-shadow: 0 3px 0 #21201d;
+      transition: all 0.12s ease;
+    }
+    .btn-chess-secondary:hover {
+      background: #45423e;
+    }
+    .btn-chess-secondary:active {
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 #21201d;
+    }
+
+    /* Eval Bar Smooth Fill */
+    .eval-fill-transition {
+      transition: height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Board square styles */
+    .board-container {
+      aspect-ratio: 1 / 1;
+      width: 100%;
+      max-width: 580px;
+      position: relative;
+      user-select: none;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* Badge pop animation */
+    @keyframes badgePop {
+      0% { transform: scale(0.3); opacity: 0; }
+      70% { transform: scale(1.18); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .badge-pop {
+      animation: badgePop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    /* Active Move Row Highlight */
+    .move-cell-active {
+      background-color: rgba(129, 182, 76, 0.28) !important;
+      border-bottom: 2px solid #81b64c;
+      color: #ffffff !important;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-chess-bg text-stone-100 selection:bg-chess-green selection:text-white">
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="bg-chess-panelDark border-b border-chess-border px-4 py-2.5 sticky top-0 z-40 shadow-md">
+    <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-chess-green flex items-center justify-center shadow-inner">
+          <i class="fa-solid fa-chess-knight text-white text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-lg tracking-tight text-white">Chess<span class="text-chess-green">Review</span></span>
+            <span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-chess-brilliant/20 text-[#1baca6] border border-[#1baca6]/30">Unlocks Free Review</span>
+          </div>
+          <p class="text-[11px] text-stone-400 hidden sm:block">Instant Chess.com Game Fetcher, ECO Opening Book & Stockfish Move Review</p>
+        </div>
+      </div>
+
+      <!-- Username Search Bar & Quick Actions -->
+      <div class="flex flex-wrap items-center gap-2 flex-1 max-w-2xl justify-end">
+        <form id="userSearchForm" class="flex items-center flex-1 min-w-[230px] max-w-md bg-chess-bg border border-chess-border rounded-lg overflow-hidden focus-within:border-chess-green transition">
+          <span class="pl-3 pr-2 text-stone-400 text-sm">
+            <i class="fa-solid fa-user"></i>
+          </span>
+          <input
+            id="usernameInput"
+            type="text"
+            placeholder="Enter Chess.com username (e.g. Hikaru, GothamChess)..."
+            class="w-full bg-transparent py-2 pr-2 text-sm text-white placeholder-stone-400 focus:outline-none"
+            autocomplete="off"
+          />
+          <button
+            type="submit"
+            id="fetchUserBtn"
+            class="bg-chess-green hover:bg-chess-greenHover text-white font-bold text-xs px-3.5 py-2.5 transition flex items-center gap-1.5 shrink-0"
+          >
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <span>Fetch Games</span>
+          </button>
+        </form>
+
+        <!-- Paste PGN Modal Trigger -->
+        <button
+          id="openPgnModalBtn"
+          class="btn-chess-secondary text-xs font-semibold px-3 py-2 rounded-lg text-stone-200 flex items-center gap-1.5"
+          title="Paste any PGN or FEN to review"
+        >
+          <i class="fa-solid fa-paste text-chess-green"></i>
+          <span>Paste PGN</span>
+        </button>
+
+        <!-- Load Tactical Demo Game -->
+        <button
+          id="loadDemoBtn"
+          class="btn-chess-secondary text-xs font-semibold px-3 py-2 rounded-lg text-stone-200 flex items-center gap-1.5"
+          title="Load famous tactical sacrificial game"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles text-[#1baca6]"></i>
+          <span class="hidden md:inline">Demo Game</span>
+        </button>
+
+        <!-- Sound Toggle -->
+        <button
+          id="soundToggleBtn"
+          class="btn-chess-secondary w-8 h-8 rounded-lg text-stone-300 flex items-center justify-center"
+          title="Toggle Move Sounds"
+        >
+          <i id="soundIcon" class="fa-solid fa-volume-high text-xs"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- STATUS / NOTIFICATION TOAST -->
+  <div id="toastBanner" class="fixed bottom-5 right-5 z-50 hidden max-w-sm bg-chess-panelDark border border-chess-border text-white px-4 py-3 rounded-xl shadow-2xl items-center gap-3">
+    <i id="toastIcon" class="fa-solid fa-circle-info text-chess-green text-lg"></i>
+    <div class="text-xs font-medium leading-snug" id="toastMessage">Notification</div>
+  </div>
+
+  <!-- MAIN WORKSPACE GRID -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+    <!-- LEFT COLUMN: CHESS.COM GAMES ARCHIVE & FILTER DRAWER (3 Cols on Desktop) -->
+    <section class="lg:col-span-3 bg-chess-panel rounded-xl border border-chess-border flex flex-col overflow-hidden shadow-xl max-h-[840px]">
+      <!-- Panel Header -->
+      <div class="p-3.5 bg-chess-panelDark border-b border-chess-border flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-trophy text-chess-green text-sm"></i>
+          <h2 class="font-bold text-sm text-white tracking-wide">Player Games Archive</h2>
+        </div>
+        <span id="gamesCountBadge" class="text-[11px] font-mono bg-chess-panelLight px-2 py-0.5 rounded text-stone-300">0 games</span>
+      </div>
+
+      <!-- Quick Famous Presets Bar -->
+      <div class="px-3 py-2 bg-chess-bg/60 border-b border-chess-border flex items-center gap-1.5 flex-wrap">
+        <span class="text-[10px] uppercase tracking-wider font-bold text-stone-400 mr-1">Try:</span>
+        <button type="button" onclick="quickSearchUser('Hikaru')" class="text-[11px] bg-chess-panelLight hover:bg-chess-border px-2 py-0.5 rounded text-stone-200 transition">Hikaru</button>
+        <button type="button" onclick="quickSearchUser('MagnusCarlsen')" class="text-[11px] bg-chess-panelLight hover:bg-chess-border px-2 py-0.5 rounded text-stone-200 transition">MagnusCarlsen</button>
+        <button type="button" onclick="quickSearchUser('GothamChess')" class="text-[11px] bg-chess-panelLight hover:bg-chess-border px-2 py-0.5 rounded text-stone-200 transition">GothamChess</button>
+        <button type="button" onclick="quickSearchUser('DanielNaroditsky')" class="text-[11px] bg-chess-panelLight hover:bg-chess-border px-2 py-0.5 rounded text-stone-200 transition">Naroditsky</button>
+      </div>
+
+      <!-- Archive Month Selector & Time Control Filter -->
+      <div class="p-3 border-b border-chess-border space-y-2 bg-chess-panel">
+        <div class="flex items-center gap-2">
+          <label for="archiveSelect" class="text-xs text-stone-400 font-medium shrink-0">Month:</label>
+          <select id="archiveSelect" class="w-full bg-chess-bg border border-chess-border rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-chess-green" disabled>
+            <option value="">Search a username above...</option>
+          </select>
+        </div>
+
+        <!-- Time Control Filter Pills -->
+        <div class="flex items-center gap-1 pt-0.5" id="timeControlFilters">
+          <button data-tc="all" class="tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-green text-white transition">All</button>
+          <button data-tc="bullet" class="tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-bg text-stone-300 hover:bg-chess-panelLight transition"><i class="fa-solid fa-bolt-lightning text-amber-400 mr-0.5"></i>Bullet</button>
+          <button data-tc="blitz" class="tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-bg text-stone-300 hover:bg-chess-panelLight transition"><i class="fa-solid fa-fire-flame-curved text-orange-400 mr-0.5"></i>Blitz</button>
+          <button data-tc="rapid" class="tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-bg text-stone-300 hover:bg-chess-panelLight transition"><i class="fa-solid fa-stopwatch text-emerald-400 mr-0.5"></i>Rapid</button>
+        </div>
+      </div>
+
+      <!-- Games Scroll List -->
+      <div id="gamesListContainer" class="flex-1 overflow-y-auto divide-y divide-chess-border/60 min-h-[280px] max-h-[620px]">
+        <!-- Default Initial Prompt -->
+        <div class="p-6 text-center space-y-3">
+          <div class="w-12 h-12 rounded-full bg-chess-panelLight mx-auto flex items-center justify-center text-chess-green">
+            <i class="fa-solid fa-chess-board text-xl"></i>
+          </div>
+          <div class="space-y-1">
+            <p class="text-sm font-bold text-white">Search Any Chess.com Player</p>
+            <p class="text-xs text-stone-400 leading-relaxed">
+              Enter your Chess.com nickname at the top to fetch all your recent games, see every opening played, and run unlimited Game Reviews for free.
+            </p>
+          </div>
+          <div class="pt-2">
+            <span class="inline-flex items-center gap-1.5 text-[11px] text-[#1baca6] bg-[#1baca6]/10 border border-[#1baca6]/30 px-2.5 py-1 rounded-full">
+              <i class="fa-solid fa-circle-check"></i> Demo Game currently loaded on board!
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER COLUMN: EVAL BAR, INTERACTIVE BOARD & PLAYBACK CONTROLS (5 Cols on Desktop) -->
+    <section class="lg:col-span-5 flex flex-col items-center space-y-2.5">
+
+      <!-- TOP PLAYER BAR (Opponent / Black by default) -->
+      <div class="w-full max-w-[624px] bg-chess-panel border border-chess-border rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <img id="topPlayerAvatar" src="https://placehold.co/64x64/383633/ffffff?text=B" alt="Player Avatar" class="w-9 h-9 rounded-lg object-cover border border-chess-border shrink-0" />
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span id="topPlayerName" class="font-bold text-sm text-white truncate">Black Player</span>
+              <span id="topPlayerRating" class="text-xs font-mono text-stone-400">(1850)</span>
+              <span id="topPlayerAccuracyPill" class="hidden text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-stone-800 text-white border border-stone-600">91.4%</span>
+            </div>
+            <div id="topPlayerMaterial" class="text-[11px] text-stone-400 flex items-center gap-1 h-4 font-mono"></div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="topPlayerClock" class="bg-chess-panelDark border border-chess-border px-2.5 py-1 rounded font-mono text-xs font-bold text-stone-300">10:00</span>
+        </div>
+      </div>
+
+      <!-- EVAL BAR + CHESSBOARD WRAPPER -->
+      <div class="w-full max-w-[624px] flex items-stretch gap-2.5 justify-center">
+        <!-- Vertical Evaluation Bar -->
+        <div id="evalBarContainer" class="w-7 sm:w-8 bg-[#262421] rounded-lg overflow-hidden border border-chess-border relative flex flex-col select-none shadow-lg shrink-0">
+          <!-- Black fill (top when white at bottom) -->
+          <div id="evalBarDarkFill" class="w-full bg-[#403d39] eval-fill-transition" style="height: 50%;"></div>
+          <!-- White fill (bottom when white at bottom) -->
+          <div id="evalBarLightFill" class="w-full bg-[#e8e6e3] flex-1 eval-fill-transition"></div>
+          <!-- Score Label Top -->
+          <span id="evalScoreTop" class="absolute top-1.5 inset-x-0 text-center font-mono text-[10px] font-extrabold text-stone-200 hidden">0.0</span>
+          <!-- Score Label Bottom -->
+          <span id="evalScoreBottom" class="absolute bottom-1.5 inset-x-0 text-center font-mono text-[10px] font-extrabold text-stone-900">+0.3</span>
+        </div>
+
+        <!-- Interactive SVG Chessboard -->
+        <div id="boardContainer" class="board-container bg-chess-panelDark">
+          <!-- Squares Grid (8x8) -->
+          <div id="boardSquares" class="w-full h-full grid grid-cols-8 grid-rows-8 relative z-10"></div>
+
+          <!-- SVG Overlay for Move Arrows (Played Move vs Best Engine Move) -->
+          <svg id="boardArrowsSvg" viewBox="0 0 800 800" class="absolute inset-0 w-full h-full pointer-events-none z-20"></svg>
+
+          <!-- Move Classification Badge Overlay (Top-Right of Destination Square) -->
+          <div id="boardBadgeOverlay" class="absolute inset-0 pointer-events-none z-30"></div>
+        </div>
+      </div>
+
+      <!-- BOTTOM PLAYER BAR (Searched Player / White by default) -->
+      <div class="w-full max-w-[624px] bg-chess-panel border border-chess-border rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <img id="bottomPlayerAvatar" src="https://placehold.co/64x64/81b64c/ffffff?text=W" alt="Player Avatar" class="w-9 h-9 rounded-lg object-cover border border-chess-border shrink-0" />
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span id="bottomPlayerName" class="font-bold text-sm text-white truncate">White Player</span>
+              <span id="bottomPlayerRating" class="text-xs font-mono text-stone-400">(1890)</span>
+              <span id="bottomPlayerAccuracyPill" class="hidden text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-white text-stone-900">94.2%</span>
+            </div>
+            <div id="bottomPlayerMaterial" class="text-[11px] text-stone-400 flex items-center gap-1 h-4 font-mono"></div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="bottomPlayerClock" class="bg-chess-panelDark border border-chess-border px-2.5 py-1 rounded font-mono text-xs font-bold text-stone-200">10:00</span>
+        </div>
+      </div>
+
+      <!-- OPENING & ECO DETECTOR BANNER -->
+      <div class="w-full max-w-[624px] bg-chess-panelDark border border-chess-border rounded-xl px-3.5 py-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-6 h-6 rounded bg-[#a88865]/20 border border-[#a88865]/40 text-[#d5b48f] flex items-center justify-center text-xs shrink-0">
+            <i class="fa-solid fa-book-open"></i>
+          </span>
+          <div class="truncate">
+            <span class="text-[10px] uppercase tracking-wider text-stone-400 font-bold block">Detected Opening</span>
+            <div class="flex items-center gap-1.5 truncate">
+              <span id="ecoCodeBadge" class="text-xs font-mono font-bold px-1.5 py-0.2 rounded bg-chess-panelLight text-chess-green">C54</span>
+              <span id="openingNameText" class="text-xs font-semibold text-stone-100 truncate">Italian Game: Giuoco Piano</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Sandbox Exploration Banner (shows if user makes custom move on board) -->
+        <button id="returnToGameLineBtn" class="hidden bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-lg transition shrink-0">
+          <i class="fa-solid fa-rotate-left mr-1"></i>Back to Game
+        </button>
+      </div>
+
+      <!-- PLAYBACK & KEY MOMENT CONTROLS BAR -->
+      <div class="w-full max-w-[624px] bg-chess-panel border border-chess-border rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow">
+        <div class="flex items-center gap-1.5">
+          <button id="btnFirstMove" class="btn-chess-secondary w-9 h-9 rounded-lg text-stone-200 flex items-center justify-center" title="First Move (Home)">
+            <i class="fa-solid fa-backward-step text-xs"></i>
+          </button>
+          <button id="btnPrevMove" class="btn-chess-secondary w-10 h-9 rounded-lg text-stone-200 flex items-center justify-center" title="Previous Move (Left Arrow)">
+            <i class="fa-solid fa-chevron-left text-sm"></i>
+          </button>
+          <button id="btnPlayPause" class="btn-chess-secondary w-10 h-9 rounded-lg text-chess-green flex items-center justify-center" title="Auto-Play Game (Space)">
+            <i id="playPauseIcon" class="fa-solid fa-play text-sm"></i>
+          </button>
+          <button id="btnNextMove" class="btn-chess-secondary w-10 h-9 rounded-lg text-stone-200 flex items-center justify-center" title="Next Move (Right Arrow)">
+            <i class="fa-solid fa-chevron-right text-sm"></i>
+          </button>
+          <button id="btnLastMove" class="btn-chess-secondary w-9 h-9 rounded-lg text-stone-200 flex items-center justify-center" title="Final Move (End)">
+            <i class="fa-solid fa-forward-step text-xs"></i>
+          </button>
+          <button id="btnFlipBoard" class="btn-chess-secondary w-9 h-9 rounded-lg text-stone-200 flex items-center justify-center ml-1" title="Flip Board (F)">
+            <i class="fa-solid fa-retweet text-xs"></i>
+          </button>
+        </div>
+
+        <!-- Guided Key Moments Button -->
+        <div class="flex items-center gap-1.5">
+          <button id="btnPrevKeyMoment" class="btn-chess-secondary px-2.5 h-9 rounded-lg text-xs font-semibold text-stone-200 flex items-center gap-1" title="Previous Key Moment">
+            <i class="fa-solid fa-angles-left text-amber-400"></i>
+          </button>
+          <button id="btnNextKeyMoment" class="btn-chess-green px-3.5 h-9 rounded-lg text-xs font-extrabold text-white flex items-center gap-1.5" title="Jump to Next Brilliant, Great, Mistake or Blunder">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Next Key Moment</span>
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: GAME REVIEW DASHBOARD, COACH BANNER, EVAL GRAPH & MOVE LIST (4 Cols on Desktop) -->
+    <section class="lg:col-span-4 bg-chess-panel rounded-xl border border-chess-border flex flex-col overflow-hidden shadow-xl">
+
+      <!-- TOP REVIEW HEADER & DEPTH CONTROLS -->
+      <div class="p-3.5 bg-chess-panelDark border-b border-chess-border flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-chess-green/20 border border-chess-green/40 flex items-center justify-center text-chess-green">
+            <i class="fa-solid fa-magnifying-glass-chart text-sm"></i>
+          </div>
+          <div>
+            <h2 class="font-extrabold text-sm text-white leading-none">Game Review</h2>
+            <span id="engineStatusText" class="text-[11px] text-stone-400 font-medium">Stockfish Engine Ready</span>
+          </div>
+        </div>
+
+        <!-- Depth Selector + Re-Analyze Button -->
+        <div class="flex items-center gap-1.5">
+          <select id="analysisDepthSelect" class="bg-chess-bg border border-chess-border rounded-lg px-2 py-1 text-xs text-stone-200 focus:outline-none focus:border-chess-green">
+            <option value="fast">Fast Review (Instant)</option>
+            <option value="10">Stockfish Depth 10</option>
+            <option value="12" selected>Stockfish Depth 12</option>
+            <option value="15">Stockfish Deep 15</option>
+          </select>
+          <button id="runAnalysisBtn" class="btn-chess-green text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <i class="fa-solid fa-microchip"></i>
+            <span>Review</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- PROGRESS BAR (Visible while analyzing) -->
+      <div id="analysisProgressWrapper" class="hidden bg-chess-panelDark px-4 py-2 border-b border-chess-border">
+        <div class="flex items-center justify-between text-xs mb-1">
+          <span id="analysisProgressLabel" class="font-semibold text-chess-green flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Evaluating moves...
+          </span>
+          <span id="analysisProgressPct" class="font-mono font-bold text-white">0%</span>
+        </div>
+        <div class="w-full h-2 bg-chess-bg rounded-full overflow-hidden">
+          <div id="analysisProgressBar" class="h-full bg-chess-green transition-all duration-150" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- COACH EXPLANATION CARD (Dynamic per move) -->
+      <div class="p-3.5 bg-gradient-to-b from-[#2c2b28] to-chess-panel border-b border-chess-border">
+        <div class="flex items-start gap-3">
+          <!-- Coach Avatar with Move Badge Overlay -->
+          <div class="relative shrink-0">
+            <div class="w-12 h-12 rounded-xl bg-chess-panelDark border border-chess-border flex items-center justify-center shadow-md">
+              <i class="fa-solid fa-user-tie text-2xl text-chess-green"></i>
+            </div>
+            <div id="coachMoveBadge" class=" -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shadow-md bg-chess-green text-white absolute">
+              ★
+            </div>
+          </div>
+
+          <!-- Coach Speech Bubble -->
+          <div class="flex-1 min-w-0 bg-chess-panelDark border border-chess-border rounded-xl p-3 relative">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span id="coachTitleBadge" class="text-xs font-extrabold text-chess-green">Best Move</span>
+                <span id="coachMoveSan" class="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-chess-panelLight text-white">Start</span>
+              </div>
+              <span id="coachEvalPill" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-200 text-stone-900">+0.3</span>
+            </div>
+            <p id="coachExplanationText" class="text-xs text-stone-300 leading-relaxed">
+              Click any move or press the right arrow key to step through the game with full Coach explanations and tactical insights.
+            </p>
+            <!-- Coach Action Buttons (Show Best Move Arrow / Play Best Line) -->
+            <div id="coachActionRow" class="mt-2 pt-2 border-t border-chess-border/70 hidden items-center justify-between gap-2">
+              <span id="coachBestMoveLabel" class="text-[11px] text-stone-400">
+                Best was <strong class="text-chess-green font-mono" id="coachBestMoveSan">Nf3</strong>
+              </span>
+              <button id="playBestMoveBtn" class="text-[11px] font-bold bg-chess-green/20 hover:bg-chess-green/30 text-chess-green border border-chess-green/40 px-2.5 py-1 rounded-md transition flex items-center gap-1">
+                <i class="fa-solid fa-play text-[9px]"></i> Preview Best Move
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE EVALUATION ADVANTAGE GRAPH -->
+      <div class="px-3.5 py-2.5 bg-chess-panelDark border-b border-chess-border">
+        <div class="flex items-center justify-between text-[11px] text-stone-400 mb-1">
+          <span class="font-semibold uppercase tracking-wider">Evaluation Graph</span>
+          <span id="currentPlyLabel" class="font-mono">Move 0 / 0</span>
+        </div>
+        <div class="relative w-full h-20 bg-[#1e1d1a] rounded-lg border border-chess-border overflow-hidden cursor-pointer">
+          <canvas id="evalGraphCanvas" class="w-full h-full block"></canvas>
+        </div>
+      </div>
+
+      <!-- TABS: [ REVIEW SUMMARY ] vs [ MOVE BY MOVE ] -->
+      <div class="flex border-b border-chess-border bg-chess-panelDark">
+        <button id="tabBtnSummary" class="flex-1 py-2.5 text-xs font-bold border-b-2 border-chess-green text-white flex items-center justify-center gap-1.5 transition">
+          <i class="fa-solid fa-chart-pie text-chess-green"></i>
+          <span>Review Summary</span>
+        </button>
+        <button id="tabBtnMoves" class="flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-stone-400 hover:text-white flex items-center justify-center gap-1.5 transition">
+          <i class="fa-solid fa-list-ol"></i>
+          <span>Moves (<span id="movesTabCount">0</span>)</span>
+        </button>
+      </div>
+
+      <!-- TAB 1 CONTENT: CHESS.COM ACCURACY, GAME RATING & BADGE BREAKDOWN -->
+      <div id="tabPanelSummary" class="p-4 space-y-4 overflow-y-auto max-h-[420px]">
+
+        <!-- Player Accuracy Cards -->
+        <div class="grid grid-cols-2 gap-3">
+          <!-- White Accuracy Card -->
+          <div class="bg-chess-panelDark border border-chess-border rounded-xl p-3 text-center">
+            <div class="text-xs font-bold text-stone-300 truncate mb-1" id="summaryWhiteName">White</div>
+            <div class="inline-block bg-white text-stone-900 font-black text-2xl font-mono px-3 py-1 rounded-lg shadow" id="summaryWhiteAccuracy">
+              --%
+            </div>
+            <div class="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-stone-400">
+              <span>Game Rating:</span>
+              <strong id="summaryWhiteEstRating" class="font-mono text-white bg-chess-panelLight px-1.5 py-0.5 rounded">--</strong>
+            </div>
+          </div>
+
+          <!-- Black Accuracy Card -->
+          <div class="bg-chess-panelDark border border-chess-border rounded-xl p-3 text-center">
+            <div class="text-xs font-bold text-stone-300 truncate mb-1" id="summaryBlackName">Black</div>
+            <div class="inline-block bg-[#1b1a17] text-white border border-stone-600 font-black text-2xl font-mono px-3 py-1 rounded-lg shadow" id="summaryBlackAccuracy">
+              --%
+            </div>
+            <div class="mt-2 flex items-center justify-center gap-1.5 text-[11px] text-stone-400">
+              <span>Game Rating:</span>
+              <strong id="summaryBlackEstRating" class="font-mono text-white bg-chess-panelLight px-1.5 py-0.5 rounded">--</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Move Classification Breakdown Table -->
+        <div class="bg-chess-panelDark border border-chess-border rounded-xl p-3">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2 text-center">Move Classification Breakdown</div>
+          <div id="classificationBreakdownRows" class="space-y-1.5 text-xs">
+            <!-- Dynamically populated by JS -->
+          </div>
+        </div>
+
+        <!-- Phase Performance Grades (Opening / Middlegame / Endgame) -->
+        <div class="bg-chess-panelDark border border-chess-border rounded-xl p-3 space-y-2">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-400 text-center">Phase Performance</div>
+          <div class="grid grid-cols-3 items-center text-xs py-1 border-b border-chess-border/50">
+            <span id="phaseOpenWhite" class="font-mono font-bold text-center text-white">--</span>
+            <span class="text-stone-400 text-center font-medium">Opening</span>
+            <span id="phaseOpenBlack" class="font-mono font-bold text-center text-white">--</span>
+          </div>
+          <div class="grid grid-cols-3 items-center text-xs py-1 border-b border-chess-border/50">
+            <span id="phaseMidWhite" class="font-mono font-bold text-center text-white">--</span>
+            <span class="text-stone-400 text-center font-medium">Middlegame</span>
+            <span id="phaseMidBlack" class="font-mono font-bold text-center text-white">--</span>
+          </div>
+          <div class="grid grid-cols-3 items-center text-xs py-1">
+            <span id="phaseEndWhite" class="font-mono font-bold text-center text-white">--</span>
+            <span class="text-stone-400 text-center font-medium">Endgame</span>
+            <span id="phaseEndBlack" class="font-mono font-bold text-center text-white">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2 CONTENT: FULL ANNOTATED MOVE LIST TABLE -->
+      <div id="tabPanelMoves" class="hidden flex-1 overflow-y-auto max-h-[420px] divide-y divide-chess-border/40">
+        <div id="movesTableContainer" class="text-xs">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- PASTE PGN MODAL -->
+  <div id="pgnModal" class="fixed inset-0 bg-black/75 z-50 hidden items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-chess-panel border border-chess-border rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl">
+      <div class="px-5 py-3.5 bg-chess-panelDark border-b border-chess-border flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-file-chess text-chess-green"></i>
+          <h3 class="font-bold text-base text-white">Import Custom PGN</h3>
+        </div>
+        <button id="closePgnModalBtn" class="text-stone-400 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3">
+        <p class="text-xs text-stone-300">
+          Paste any PGN from Chess.com, Lichess, or over-the-board tournament games to run a complete Game Review and Opening detection:
+        </p>
+        <textarea
+          id="pgnTextarea"
+          rows="8"
+          placeholder='[Event "Live Chess"]&#10;[White "Player1"]&#10;[Black "Player2"]&#10;&#10;1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 ...'
+          class="w-full bg-chess-bg border border-chess-border rounded-xl p-3 text-xs font-mono text-white focus:outline-none focus:border-chess-green"
+        ></textarea>
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button id="cancelPgnModalBtn" class="btn-chess-secondary px-4 py-2 rounded-lg text-xs font-semibold text-stone-300">Cancel</button>
+          <button id="importPgnConfirmBtn" class="btn-chess-green px-5 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-1.5">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Load & Review PGN</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATION JAVASCRIPT -->
+  <script>
+    /*************************************************************************
+     * 1. MOVE CLASSIFICATIONS METADATA (Exact Chess.com Colors & Icons)
+     *************************************************************************/
+    const CLASSIFICATIONS = {
+      brilliant: {
+        key: 'brilliant',
+        label: 'Brilliant',
+        symbol: '!!',
+        color: '#1baca6',
+        bgClass: 'bg-[#1baca6]',
+        textClass: 'text-[#1baca6]',
+        desc: 'A great sacrifice or subtle resource that finds the best continuation!'
+      },
+      great: {
+        key: 'great',
+        label: 'Great Move',
+        symbol: '!',
+        color: '#5c8bb0',
+        bgClass: 'bg-[#5c8bb0]',
+        textClass: 'text-[#5c8bb0]',
+        desc: 'Found a critical move that turns the tide or holds the balance.'
+      },
+      best: {
+        key: 'best',
+        label: 'Best Move',
+        symbol: '★',
+        color: '#81b64c',
+        bgClass: 'bg-[#81b64c]',
+        textClass: 'text-[#81b64c]',
+        desc: 'The engine’s top recommendation in this position.'
+      },
+      excellent: {
+        key: 'excellent',
+        label: 'Excellent',
+        symbol: '👍',
+        color: '#81b64c',
+        bgClass: 'bg-[#81b64c]',
+        textClass: 'text-[#81b64c]',
+        desc: 'A very strong move, almost as good as the engine’s top choice.'
+      },
+      good: {
+        key: 'good',
+        label: 'Good',
+        symbol: '✓',
+        color: '#95b776',
+        bgClass: 'bg-[#95b776]',
+        textClass: 'text-[#95b776]',
+        desc: 'A solid playable move that maintains the position.'
+      },
+      book: {
+        key: 'book',
+        label: 'Book Move',
+        symbol: '📖',
+        color: '#a88865',
+        bgClass: 'bg-[#a88865]',
+        textClass: 'text-[#d5b48f]',
+        desc: 'Standard established opening theory.'
+      },
+      inaccuracy: {
+        key: 'inaccuracy',
+        label: 'Inaccuracy',
+        symbol: '?!',
+        color: '#f7c631',
+        bgClass: 'bg-[#f7c631]',
+        textClass: 'text-[#f7c631]',
+        desc: 'A slight slip that allows the opponent a more comfortable game.'
+      },
+      mistake: {
+        key: 'mistake',
+        label: 'Mistake',
+        symbol: '?',
+        color: '#ffa459',
+        bgClass: 'bg-[#ffa459]',
+        textClass: 'text-[#ffa459]',
+        desc: 'A bad move that immediately worsens your evaluation.'
+      },
+      miss: {
+        key: 'miss',
+        label: 'Missed Win / Opportunity',
+        symbol: '✖',
+        color: '#ff7769',
+        bgClass: 'bg-[#ff7769]',
+        textClass: 'text-[#ff7769]',
+        desc: 'Failed to punish the opponent’s previous mistake or tactical oversight.'
+      },
+      blunder: {
+        key: 'blunder',
+        label: 'Blunder',
+        symbol: '??',
+        color: '#fa412d',
+        bgClass: 'bg-[#fa412d]',
+        textClass: 'text-[#fa412d]',
+        desc: 'A very bad move that loses heavy material or allows a decisive attack.'
+      }
+    };
+
+    const CLASSIFICATION_ORDER = [
+      'brilliant', 'great', 'best', 'excellent', 'good', 'book', 'inaccuracy', 'mistake', 'miss', 'blunder'
+    ];
+
+    /*************************************************************************
+     * 2. COMPREHENSIVE ECO & MOVE-PREFIX OPENING BOOK DICTIONARY
+     *************************************************************************/
+    const OPENING_BOOK = [
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d4 exd4 cxd4 Bb4+ Nc3 Nxe4 O-O', eco: 'C54', name: 'Italian Game: Giuoco Piano, Greco Attack' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d4', eco: 'C54', name: 'Italian Game: Giuoco Piano, Center Attack' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Bc5 b4', eco: 'C51', name: 'Italian Game: Evans Gambit' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Bc5', eco: 'C50', name: 'Italian Game: Giuoco Piano' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5', eco: 'C57', name: 'Italian Game: Two Knights Defense, Knight Attack' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4 Nf6', eco: 'C55', name: 'Italian Game: Two Knights Defense' },
+      { moves: 'e4 e5 Nf3 Nc6 Bc4', eco: 'C50', name: 'Italian Game' },
+      { moves: 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7', eco: 'C84', name: 'Ruy Lopez: Morphy Defense, Closed' },
+      { moves: 'e4 e5 Nf3 Nc6 Bb5 a6', eco: 'C70', name: 'Ruy Lopez: Morphy Defense' },
+      { moves: 'e4 e5 Nf3 Nc6 Bb5 Nf6', eco: 'C65', name: 'Ruy Lopez: Berlin Defense' },
+      { moves: 'e4 e5 Nf3 Nc6 Bb5', eco: 'C60', name: 'Ruy Lopez (Spanish Game)' },
+      { moves: 'e4 e5 Nf3 Nc6 d4 exd4 Nxd4', eco: 'C45', name: 'Scotch Game' },
+      { moves: 'e4 e5 Nf3 Nf6', eco: 'C42', name: 'Petrov’s Defense (Russian Game)' },
+      { moves: 'e4 e5 Nc3', eco: 'C25', name: 'Vienna Game' },
+      { moves: 'e4 e5 f4 exf4', eco: 'C33', name: 'King’s Gambit Accepted' },
+      { moves: 'e4 e5 f4', eco: 'C30', name: 'King’s Gambit' },
+      { moves: 'e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6', eco: 'B90', name: 'Sicilian Defense: Najdorf Variation' },
+      { moves: 'e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 g6', eco: 'B70', name: 'Sicilian Defense: Dragon Variation' },
+      { moves: 'e4 c5 Nf3 Nc6 d4 cxd4 Nxd4', eco: 'B32', name: 'Sicilian Defense: Open' },
+      { moves: 'e4 c5 c3', eco: 'B22', name: 'Sicilian Defense: Alapin Variation' },
+      { moves: 'e4 c5 Nc3', eco: 'B23', name: 'Sicilian Defense: Closed' },
+      { moves: 'e4 c5', eco: 'B20', name: 'Sicilian Defense' },
+      { moves: 'e4 e6 d4 d5 Nc3', eco: 'C10', name: 'French Defense: Paulsen / Winawer' },
+      { moves: 'e4 e6 d4 d5 e5', eco: 'C02', name: 'French Defense: Advance Variation' },
+      { moves: 'e4 e6 d4 d5', eco: 'C00', name: 'French Defense' },
+      { moves: 'e4 c6 d4 d5 e5', eco: 'B12', name: 'Caro-Kann Defense: Advance Variation' },
+      { moves: 'e4 c6 d4 d5 Nc3 dxe4 Nxe4', eco: 'B15', name: 'Caro-Kann Defense: Main Line' },
+      { moves: 'e4 c6 d4 d5', eco: 'B10', name: 'Caro-Kann Defense' },
+      { moves: 'e4 d5 exd5 Qxd5 Nc3 Qa5', eco: 'B01', name: 'Scandinavian Defense: Mieses-Kotroc Variation' },
+      { moves: 'e4 d5', eco: 'B01', name: 'Scandinavian Defense' },
+      { moves: 'e4 d6 d4 Nf6 Nc3 g6', eco: 'B07', name: 'Pirc Defense' },
+      { moves: 'e4 Nf6', eco: 'B02', name: 'Alekhine’s Defense' },
+      { moves: 'd4 d5 c4 e6 Nc3 Nf6', eco: 'D50', name: 'Queen’s Gambit Declined' },
+      { moves: 'd4 d5 c4 c6', eco: 'D10', name: 'Slav Defense' },
+      { moves: 'd4 d5 c4 dxc4', eco: 'D20', name: 'Queen’s Gambit Accepted' },
+      { moves: 'd4 d5 c4', eco: 'D06', name: 'Queen’s Gambit' },
+      { moves: 'd4 d5 Bf4', eco: 'D00', name: 'London System' },
+      { moves: 'd4 d5 e4 dxe4 Nc3 Nf6 f3', eco: 'D00', name: 'Blackmar-Diemer Gambit' },
+      { moves: 'd4 Nf6 c4 g6 Nc3 Bg7 e4 d6', eco: 'E60', name: 'King’s Indian Defense' },
+      { moves: 'd4 Nf6 c4 e6 Nc3 Bb4', eco: 'E20', name: 'Nimzo-Indian Defense' },
+      { moves: 'd4 Nf6 Bf4', eco: 'A45', name: 'London System: Indian Setup' },
+      { moves: 'c4 e5', eco: 'A20', name: 'English Opening: Reversed Sicilian' },
+      { moves: 'c4 c5', eco: 'A30', name: 'English Opening: Symmetrical Variation' },
+      { moves: 'c4', eco: 'A10', name: 'English Opening' },
+      { moves: 'Nf3 d5 g3', eco: 'A07', name: 'King’s Indian Attack' },
+      { moves: 'e4 e5', eco: 'C20', name: 'King’s Pawn Game' },
+      { moves: 'd4 d5', eco: 'D00', name: 'Queen’s Pawn Game' }
+    ];
+
+    /*************************************************************************
+     * 3. CRISP VECTOR CHESS PIECES (SVG DATA)
+     *************************************************************************/
+    const PIECE_SVGS = {
+      wP: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><path d="M 22.5,9 C 19.5,9 17,11.5 17,14.5 C 17,16.8 18.4,18.7 20.4,19.5 C 17.5,21 15.5,24 15.5,28.5 C 15.5,30.5 19,31.5 19,31.5 L 13.5,35.5 L 13.5,38 L 31.5,38 L 31.5,35.5 L 26,31.5 C 26,31.5 29.5,30.5 29.5,28.5 C 29.5,24 27.5,21 24.6,19.5 C 26.6,18.7 28,16.8 28,14.5 C 28,11.5 25.5,9 22.5,9 z" fill="#ffffff" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round"/></svg>`,
+      wR: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#ffffff" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,39 L 36,39 L 36,36 L 9,36 L 9,39 z"/><path d="M 12,36 L 12,32 L 33,32 L 33,36 L 12,36 z"/><path d="M 11,14 L 11,9 L 15,9 L 15,11 L 20,11 L 20,9 L 25,9 L 25,11 L 30,11 L 30,9 L 34,9 L 34,14"/><path d="M 34,14 L 31,17 L 14,17 L 11,14"/><path d="M 31,17 L 31,29.5 L 14,29.5 L 14,17"/><path d="M 14,29.5 L 12,32 L 33,32 L 31,29.5"/></g></svg>`,
+      wN: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="none" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 22,10 C 32.5,11 38.5,18 38,39 L 15,39 C 15,30 25,32.5 23,18" fill="#ffffff"/><path d="M 24,18 C 24.38,20.91 18.45,25.37 16,27 C 13,29 13.18,31.34 11,31 C 9.958,30.06 12.41,27.96 11,28 C 10,28 11.19,29.23 10,30 C 9,30 5.997,31 6,26 C 6,24 12,14 12,14 C 12,14 13.89,12.1 14,10.5 C 13.27,9.506 13.5,8.5 13.5,7.5 C 14.5,6.5 16.5,10 16.5,10 L 18.5,10 C 18.5,10 19.28,8.008 21,7 C 22,7 22,10 22,10" fill="#ffffff"/><circle cx="15.5" cy="14.5" r="1.2" fill="#1f1e1b"/></g></svg>`,
+      wB: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#ffffff" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,36 C 12.39,35.03 19.11,36.43 22.5,34 C 25.89,36.43 32.61,35.03 36,36 C 36,36 37.65,36.54 39,38 C 38.32,38.97 37.35,38.99 36,38.5 C 32.61,37.53 25.89,38.96 22.5,37.5 C 19.11,38.96 12.39,37.53 9,38.5 C 7.646,38.99 6.677,38.97 6,38 C 7.354,36.06 9,36 9,36 z"/><path d="M 15,32 C 17.5,34.5 27.5,34.5 30,32 C 30.5,30.5 30,30 30,30 C 30,27.5 27.5,26 27.5,26 C 33,24.5 33.5,14.5 22.5,10.5 C 11.5,14.5 12,24.5 17.5,26 C 17.5,26 15,27.5 15,30 C 15,30 14.5,30.5 15,32 z"/><circle cx="22.5" cy="8" r="2.2"/><path d="M 17.5,26 L 27.5,26 M 15,30 L 30,30 M 22.5,15.5 L 22.5,20.5 M 20,18 L 25,18" fill="none"/></g></svg>`,
+      wQ: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#ffffff" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,26 C 17.5,24.5 30,24.5 36,26 L 38.5,13.5 L 31,25 L 30.7,10.9 L 25.5,24.5 L 22.5,10 L 19.5,24.5 L 14.3,10.9 L 14,25 L 6.5,13.5 L 9,26 z"/><path d="M 9,26 C 9,28 10.5,28 11.5,30 C 12.5,31.5 12.5,31 12,33.5 C 10.5,34.5 11,36 11,36 C 9.5,37.5 11,38.5 11,38.5 C 17.5,39.5 27.5,39.5 34,38.5 C 34,38.5 35.5,37.5 34,36 C 34,36 34.5,34.5 33,33.5 C 32.5,31 32.5,31.5 33.5,30 C 34.5,28 36,28 36,26 C 27.5,24.5 17.5,24.5 9,26 z"/><circle cx="6" cy="12" r="2"/><circle cx="14" cy="9" r="2"/><circle cx="22.5" cy="8" r="2"/><circle cx="31" cy="9" r="2"/><circle cx="39" cy="12" r="2"/></g></svg>`,
+      wK: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#ffffff" stroke="#1f1e1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 22.5,11.63 L 22.5,6" fill="none"/><path d="M 20,8 L 25,8" fill="none"/><path d="M 22.5,25 C 22.5,25 27,17.5 25.5,14.5 C 25.5,14.5 24.5,12 22.5,12 C 20.5,12 19.5,14.5 19.5,14.5 C 18,17.5 22.5,25 22.5,25"/><path d="M 11.5,37 C 17,40.5 27,40.5 32.5,37 L 32.5,30 C 32.5,30 41.5,25.5 38.5,19.5 C 34.5,13 25,16 22.5,23.5 L 22.5,27 L 22.5,23.5 C 19,16 9.5,13 6.5,19.5 C 3.5,25.5 11.5,29.5 11.5,29.5 L 11.5,37 z"/><path d="M 11.5,30 C 17,27 27,27 32.5,30" fill="none"/><path d="M 11.5,33.5 C 17,30.5 27,30.5 32.5,33.5" fill="none"/><path d="M 11.5,37 C 17,34 27,34 32.5,37" fill="none"/></g></svg>`,
+
+      bP: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><path d="M 22.5,9 C 19.5,9 17,11.5 17,14.5 C 17,16.8 18.4,18.7 20.4,19.5 C 17.5,21 15.5,24 15.5,28.5 C 15.5,30.5 19,31.5 19,31.5 L 13.5,35.5 L 13.5,38 L 31.5,38 L 31.5,35.5 L 26,31.5 C 26,31.5 29.5,30.5 29.5,28.5 C 29.5,24 27.5,21 24.6,19.5 C 26.6,18.7 28,16.8 28,14.5 C 28,11.5 25.5,9 22.5,9 z" fill="#262421" stroke="#111111" stroke-width="2" stroke-linecap="round"/></svg>`,
+      bR: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#262421" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,39 L 36,39 L 36,36 L 9,36 L 9,39 z"/><path d="M 12.5,32 L 14,29.5 L 31,29.5 L 32.5,32 L 12.5,32 z"/><path d="M 12,36 L 12,32 L 33,32 L 33,36 L 12,36 z"/><path d="M 14,29.5 L 14,16.5 L 31,16.5 L 31,29.5 L 14,29.5 z"/><path d="M 14,16.5 L 11,14 L 34,14 L 31,16.5 L 14,16.5 z"/><path d="M 11,14 L 11,9 L 15,9 L 15,11 L 20,11 L 20,9 L 25,9 L 25,11 L 30,11 L 30,9 L 34,9 L 34,14 L 11,14 z"/><path d="M 14,16.5 L 31,16.5" stroke="#b5b5b5" stroke-width="1"/><path d="M 14,29.5 L 31,29.5" stroke="#b5b5b5" stroke-width="1"/></g></svg>`,
+      bN: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 22,10 C 32.5,11 38.5,18 38,39 L 15,39 C 15,30 25,32.5 23,18" fill="#262421"/><path d="M 24,18 C 24.38,20.91 18.45,25.37 16,27 C 13,29 13.18,31.34 11,31 C 9.958,30.06 12.41,27.96 11,28 C 10,28 11.19,29.23 10,30 C 9,30 5.997,31 6,26 C 6,24 12,14 12,14 C 12,14 13.89,12.1 14,10.5 C 13.27,9.506 13.5,8.5 13.5,7.5 C 14.5,6.5 16.5,10 16.5,10 L 18.5,10 C 18.5,10 19.28,8.008 21,7 C 22,7 22,10 22,10" fill="#262421"/><circle cx="15.5" cy="14.5" r="1.2" fill="#e5e5e5" stroke="none"/></g></svg>`,
+      bB: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#262421" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,36 C 12.39,35.03 19.11,36.43 22.5,34 C 25.89,36.43 32.61,35.03 36,36 C 36,36 37.65,36.54 39,38 C 38.32,38.97 37.35,38.99 36,38.5 C 32.61,37.53 25.89,38.96 22.5,37.5 C 19.11,38.96 12.39,37.53 9,38.5 C 7.646,38.99 6.677,38.97 6,38 C 7.354,36.06 9,36 9,36 z"/><path d="M 15,32 C 17.5,34.5 27.5,34.5 30,32 C 30.5,30.5 30,30 30,30 C 30,27.5 27.5,26 27.5,26 C 33,24.5 33.5,14.5 22.5,10.5 C 11.5,14.5 12,24.5 17.5,26 C 17.5,26 15,27.5 15,30 C 15,30 14.5,30.5 15,32 z"/><circle cx="22.5" cy="8" r="2.2"/><path d="M 17.5,26 L 27.5,26 M 15,30 L 30,30 M 22.5,15.5 L 22.5,20.5 M 20,18 L 25,18" fill="none" stroke="#b5b5b5" stroke-width="1.5"/></g></svg>`,
+      bQ: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#262421" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 9,26 C 17.5,24.5 30,24.5 36,26 L 38.5,13.5 L 31,25 L 30.7,10.9 L 25.5,24.5 L 22.5,10 L 19.5,24.5 L 14.3,10.9 L 14,25 L 6.5,13.5 L 9,26 z"/><path d="M 9,26 C 9,28 10.5,28 11.5,30 C 12.5,31.5 12.5,31 12,33.5 C 10.5,34.5 11,36 11,36 C 9.5,37.5 11,38.5 11,38.5 C 17.5,39.5 27.5,39.5 34,38.5 C 34,38.5 35.5,37.5 34,36 C 34,36 34.5,34.5 33,33.5 C 32.5,31 32.5,31.5 33.5,30 C 34.5,28 36,28 36,26 C 27.5,24.5 17.5,24.5 9,26 z"/><path d="M 11.5,30 C 15,29 30,29 33.5,30" fill="none" stroke="#b5b5b5" stroke-width="1.2"/><path d="M 12,33.5 C 18,32.5 27,32.5 33,33.5" fill="none" stroke="#b5b5b5" stroke-width="1.2"/><circle cx="6" cy="12" r="2"/><circle cx="14" cy="9" r="2"/><circle cx="22.5" cy="8" r="2"/><circle cx="31" cy="9" r="2"/><circle cx="39" cy="12" r="2"/></g></svg>`,
+      bK: `<svg viewBox="0 0 45 45" class="w-full h-full drop-shadow"><g fill="#262421" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M 22.5,11.63 L 22.5,6" fill="none"/><path d="M 20,8 L 25,8" fill="none"/><path d="M 22.5,25 C 22.5,25 27,17.5 25.5,14.5 C 25.5,14.5 24.5,12 22.5,12 C 20.5,12 19.5,14.5 19.5,14.5 C 18,17.5 22.5,25 22.5,25"/><path d="M 11.5,37 C 17,40.5 27,40.5 32.5,37 L 32.5,30 C 32.5,30 41.5,25.5 38.5,19.5 C 34.5,13 25,16 22.5,23.5 L 22.5,27 L 22.5,23.5 C 19,16 9.5,13 6.5,19.5 C 3.5,25.5 11.5,29.5 11.5,29.5 L 11.5,37 z"/><path d="M 11.5,30 C 17,27 27,27 32.5,30" fill="none" stroke="#b5b5b5" stroke-width="1.2"/><path d="M 11.5,33.5 C 17,30.5 27,30.5 32.5,33.5" fill="none" stroke="#b5b5b5" stroke-width="1.2"/></g></svg>`
+    };
+
+    /*************************************************************************
+     * 4. BUILT-IN TACTICAL DEMO GAME (Features Opening Book, Sacrifices & Blunders)
+     *************************************************************************/
+    const DEMO_PGN = `[Event "Live Chess - Immortal Tactical Showcase"]
+[Site "Chess.com"]
+[Date "2025.02.18"]
+[White "Grandmaster_Alex"]
+[Black "Tactical_Challenger"]
+[Result "1-0"]
+[ECO "C54"]
+[ECOUrl "https://www.chess.com/openings/Italian-Game-Giuoco-Piano-Greco-Attack"]
+[WhiteElo "2145"]
+[BlackElo "2080"]
+[TimeControl "600"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. cxd4 Bb4+ 7. Nc3 Nxe4 8. O-O Nxc3 9. bxc3 Bxc3 10. Qb3 Bxa1 11. Bxf7+ Kf8 12. Bg5 Ne7 13. Ne5 Bxd4 14. Bg6 d5 15. Qf3+ Bf5 16. Bxf5 Bxe5 17. Be6+ Bf6 18. Bxf6 gxf6 19. Qxf6+ Ke8 20. Qf7# 1-0`;
+
+    /*************************************************************************
+     * 5. GLOBAL APPLICATION STATE
+     *************************************************************************/
+    const state = {
+      searchedUsername: '',
+      playerAvatarCache: {},
+      archivesList: [],
+      fetchedGames: [],
+      selectedTimeControl: 'all',
+
+      // Active game data
+      pgnHeaders: {},
+      whitePlayer: { username: 'Grandmaster_Alex', rating: '2145', avatar: '' },
+      blackPlayer: { username: 'Tactical_Challenger', rating: '2080', avatar: '' },
+      openingEco: 'C54',
+      openingName: 'Italian Game: Giuoco Piano, Greco Attack',
+      timeControlText: '10 min Rapid',
+
+      // Ply states (0 = initial board, 1..N = after each half-move)
+      positions: [],   // Array of { fen, moveObj, san, uci, turn, materialDiff, evalCp, mate, bestMoveUci, bestMoveSan, classification, coachText, isBook, openingAtPly }
+      currentPly: 0,
+      isFlipped: false,
+      autoPlayTimer: null,
+      soundEnabled: true,
+
+      // Interactive custom board exploration
+      selectedSquare: null,
+      customExplorationChess: null,
+      isCustomExploration: false,
+
+      // Stockfish Worker
+      sfWorker: null,
+      sfReady: false,
+      isAnalyzing: false,
+      analysisAbortId: 0,
+
+      // Summary metrics
+      summary: {
+        whiteAccuracy: 94.6,
+        blackAccuracy: 76.2,
+        whiteEstRating: 2350,
+        blackEstRating: 1790,
+        counts: { w: {}, b: {} },
+        phases: {
+          open: { w: 'Excellent', b: 'Good' },
+          mid: { w: 'Brilliant', b: 'Blunder' },
+          end: { w: '—', b: '—' }
+        }
+      }
+    };
+
+    /*************************************************************************
+     * 6. WEB AUDIO SYNTHESIZER FOR CHESS SOUNDS (Zero external dependencies)
+     *************************************************************************/
+    let audioCtx = null;
+    function playChessSound(type = 'move') {
+      if (!state.soundEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'capture') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(190, now);
+          osc.frequency.exponentialRampToValueAtTime(65, now + 0.08);
+          gain.gain.setValueAtTime(0.28, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
+          osc.start(now);
+          osc.stop(now + 0.09);
+        } else if (type === 'check') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(580, now);
+          osc.frequency.exponentialRampToValueAtTime(320, now + 0.16);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+          osc.start(now);
+          osc.stop(now + 0.18);
+        } else if (type === 'brilliant') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.07);
+          osc.frequency.setValueAtTime(783.99, now + 0.14);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+          osc.start(now);
+          osc.stop(now + 0.29);
+        } else {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(145, now);
+          osc.frequency.exponentialRampToValueAtTime(55, now + 0.06);
+          gain.gain.setValueAtTime(0.22, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+          osc.start(now);
+          osc.stop(now + 0.07);
+        }
+      } catch (e) {
+        // Ignore audio errors on restricted autoplay
+      }
+    }
+
+    /*************************************************************************
+     * 7. STOCKFISH WEB WORKER INITIALIZATION + FAST TACTICAL ENGINE FALLBACK
+     *************************************************************************/
+    function initStockfishWorker() {
+      try {
+        const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');`;
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        const worker = new Worker(workerUrl);
+
+        worker.onmessage = function (e) {
+          const line = typeof e.data === 'string' ? e.data : '';
+          if (line === 'uciok' || line.includes('readyok')) {
+            state.sfReady = true;
+            document.getElementById('engineStatusText').textContent = 'Stockfish 10 WASM Ready';
+          }
+          if (currentSfResolver) {
+            currentSfResolver(line);
+          }
+        };
+
+        worker.onerror = function () {
+          state.sfReady = false;
+          document.getElementById('engineStatusText').textContent = 'Built-in Tactical Engine Ready';
+        };
+
+        worker.postMessage('uci');
+        worker.postMessage('isready');
+        state.sfWorker = worker;
+      } catch (err) {
+        state.sfReady = false;
+        document.getElementById('engineStatusText').textContent = 'Built-in Tactical Engine Ready';
+      }
+    }
+
+    let currentSfResolver = null;
+
+    function evaluateFenWithStockfish(fen, depth = 12) {
+      return new Promise((resolve) => {
+        if (!state.sfWorker || !state.sfReady || depth === 'fast') {
+          resolve(evaluatePositionBuiltIn(fen, 3));
+          return;
+        }
+
+        let lastCp = 0;
+        let lastMate = null;
+        let bestMoveUci = '';
+        const turn = fen.split(' ')[1] === 'w' ? 1 : -1;
+
+        const timeoutId = setTimeout(() => {
+          currentSfResolver = null;
+          resolve(evaluatePositionBuiltIn(fen, 3));
+        }, 1800);
+
+        currentSfResolver = (line) => {
+          if (line.startsWith('info') && line.includes('score')) {
+            const cpMatch = line.match(/score cp (-?\d+)/);
+            const mateMatch = line.match(/score mate (-?\d+)/);
+            const pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+            if (cpMatch) {
+              // Convert side-to-move score to White perspective
+              lastCp = parseInt(cpMatch[1], 10) * turn;
+              lastMate = null;
+            } else if (mateMatch) {
+              const m = parseInt(mateMatch[1], 10) * turn;
+              lastMate = m;
+              lastCp = m > 0 ? 9900 - m * 10 : -9900 - m * 10;
+            }
+            if (pvMatch) {
+              bestMoveUci = pvMatch[1];
+            }
+          } else if (line.startsWith('bestmove')) {
+            clearTimeout(timeoutId);
+            const bmMatch = line.match(/^bestmove ([a-h][1-8][a-h][1-8][qrbn]?)/);
+            if (bmMatch) bestMoveUci = bmMatch[1];
+            currentSfResolver = null;
+            resolve({
+              evalCp: lastCp,
+              mate: lastMate,
+              bestMoveUci: bestMoveUci
+            });
+          }
+        };
+
+        state.sfWorker.postMessage('stop');
+        state.sfWorker.postMessage(`position fen ${fen}`);
+        state.sfWorker.postMessage(`go depth ${depth}`);
+      });
+    }
+
+    /*************************************************************************
+     * 8. BUILT-IN HIGH-SPEED TACTICAL EVALUATOR (Piece-Square + Alpha-Beta)
+     *************************************************************************/
+    const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+
+    // Piece-Square Tables (from White's perspective, flipped for Black)
+    const PST = {
+      p: [
+         0,  0,  0,  0,  0,  0,  0,  0,
+        50, 50, 50, 50, 50, 50, 50, 50,
+        10, 10, 20, 30, 30, 20, 10, 10,
+         5,  5, 10, 25, 25, 10,  5,  5,
+         0,  0,  0, 22, 22,  0,  0,  0,
+         5, -5,-10,  0,  0,-10, -5,  5,
+         5, 10, 10,-20,-20, 10, 10,  5,
+         0,  0,  0,  0,  0,  0,  0,  0
+      ],
+      n: [
+        -50,-40,-30,-30,-30,-30,-40,-50,
+        -40,-20,  0,  0,  0,  0,-20,-40,
+        -30,  0, 10, 15, 15, 10,  0,-30,
+        -30,  5, 15, 20, 20, 15,  5,-30,
+        -30,  0, 15, 20, 20, 15,  0,-30,
+        -30,  5, 10, 15, 15, 10,  5,-30,
+        -40,-20,  0,  5,  5,  0,-20,-40,
+        -50,-40,-30,-30,-30,-30,-40,-50
+      ],
+      b: [
+        -20,-10,-10,-10,-10,-10,-10,-20,
+        -10,  0,  0,  0,  0,  0,  0,-10,
+        -10,  0,  5, 10, 10,  5,  0,-10,
+        -10,  5,  5, 10, 10,  5,  5,-10,
+        -10,  0, 10, 10, 10, 10,  0,-10,
+        -10, 10, 10, 10, 10, 10, 10,-10,
+        -10,  5,  0,  0,  0,  0,  5,-10,
+        -20,-10,-10,-10,-10,-10,-10,-20
+      ],
+      r: [
+          0,  0,  0,  0,  0,  0,  0,  0,
+          5, 10, 10, 10, 10, 10, 10,  5,
+         -5,  0,  0,  0,  0,  0,  0, -5,
+         -5,  0,  0,  0,  0,  0,  0, -5,
+         -5,  0,  0,  0,  0,  0,  0, -5,
+         -5,  0,  0,  0,  0,  0,  0, -5,
+         -5,  0,  0,  0,  0,  0,  0, -5,
+          0,  0,  0,  5,  5,  0,  0,  0
+      ],
+      q: [
+        -20,-10,-10, -5, -5,-10,-10,-20,
+        -10,  0,  0,  0,  0,  0,  0,-10,
+        -10,  0,  5,  5,  5,  5,  0,-10,
+         -5,  0,  5,  5,  5,  5,  0, -5,
+          0,  0,  5,  5,  5,  5,  0, -5,
+        -10,  5,  5,  5,  5,  5,  0,-10,
+        -10,  0,  5,  0,  0,  0,  0,-10,
+        -20,-10,-10, -5, -5,-10,-10,-20
+      ],
+      k: [
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -20,-30,-30,-40,-40,-30,-30,-20,
+        -10,-20,-20,-20,-20,-20,-20,-10,
+         20, 20,  0,  0,  0,  0, 20, 20,
+         20, 30, 10,  0,  0, 10, 30, 20
+      ]
+    };
+
+    function staticEvaluateBoard(chess) {
+      if (chess.in_checkmate()) {
+        return chess.turn() === 'w' ? -9900 : 9900;
+      }
+      if (chess.in_draw() || chess.in_stalemate() || chess.in_threefold_repetition()) {
+        return 0;
+      }
+      const board = chess.board();
+      let score = 0;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const piece = board[r][c];
+          if (!piece) continue;
+          const base = PIECE_VALUES[piece.type] || 0;
+          const sqIndex = piece.color === 'w' ? r * 8 + c : (7 - r) * 8 + c;
+          const positional = PST[piece.type] ? PST[piece.type][sqIndex] : 0;
+          if (piece.color === 'w') {
+            score += base + positional;
+          } else {
+            score -= base + positional;
+          }
+        }
+      }
+      if (chess.in_check()) {
+        score += chess.turn() === 'w' ? -35 : 35;
+      }
+      return score;
+    }
+
+    function evaluatePositionBuiltIn(fen, depth = 2) {
+      const chess = new Chess(fen);
+      if (chess.game_over()) {
+        if (chess.in_checkmate()) {
+          const m = chess.turn() === 'w' ? -1 : 1;
+          return { evalCp: m * 9900, mate: m, bestMoveUci: '' };
+        }
+        return { evalCp: 0, mate: null, bestMoveUci: '' };
+      }
+
+      const isMaximizing = chess.turn() === 'w';
+      const moves = chess.moves({ verbose: true });
+      // Order captures and checks first
+      moves.sort((a, b) => (b.captured ? 10 : 0) - (a.captured ? 10 : 0));
+
+      let bestMove = moves[0];
+      let bestVal = isMaximizing ? -Infinity : Infinity;
+
+      for (const m of moves) {
+        chess.move(m);
+        const val = minimaxSearch(chess, depth - 1, -100000, 100000, !isMaximizing);
+        chess.undo();
+        if (isMaximizing && val > bestVal) {
+          bestVal = val;
+          bestMove = m;
+        } else if (!isMaximizing && val < bestVal) {
+          bestVal = val;
+          bestMove = m;
+        }
+      }
+
+      const uci = bestMove ? `${bestMove.from}${bestMove.to}${bestMove.promotion || ''}` : '';
+      let mate = null;
+      if (Math.abs(bestVal) > 9000) {
+        mate = bestVal > 0 ? 1 : -1;
+      }
+      return { evalCp: bestVal, mate, bestMoveUci: uci };
+    }
+
+    function minimaxSearch(chess, depth, alpha, beta, isMaximizing) {
+      if (depth <= 0 || chess.game_over()) {
+        return staticEvaluateBoard(chess);
+      }
+      const moves = chess.moves({ verbose: true });
+      moves.sort((a, b) => (b.captured ? 12 : 0) - (a.captured ? 12 : 0));
+
+      // Limit branching in deep tactical trees for instant UI responsiveness
+      const limit = moves.length > 18 ? 18 : moves.length;
+
+      if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (let i = 0; i < limit; i++) {
+          chess.move(moves[i]);
+          const ev = minimaxSearch(chess, depth - 1, alpha, beta, false);
+          chess.undo();
+          if (ev > maxEval) maxEval = ev;
+          if (ev > alpha) alpha = ev;
+          if (beta <= alpha) break;
+        }
+        return maxEval;
+      } else {
+        let minEval = Infinity;
+        for (let i = 0; i < limit; i++) {
+          chess.move(moves[i]);
+          const ev = minimaxSearch(chess, depth - 1, alpha, beta, true);
+          chess.undo();
+          if (ev < minEval) minEval = ev;
+          if (ev < beta) beta = ev;
+          if (beta <= alpha) break;
+        }
+        return minEval;
+      }
+    }
+
+    /*************************************************************************
+     * 9. WIN PROBABILITY & CHESS.COM MOVE CLASSIFIER + COACH EXPLANATION
+     *************************************************************************/
+    function cpToWinProbability(cp) {
+      // Chess.com / Lichess standard logistic win probability curve (0 to 100)
+      const clamped = Math.max(-2500, Math.min(2500, cp));
+      return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * clamped)) - 1);
+    }
+
+    function countMaterialByColor(fen) {
+      const boardPart = fen.split(' ')[0];
+      const weights = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+      let w = 0, b = 0;
+      for (const ch of boardPart) {
+        const lower = ch.toLowerCase();
+        if (weights[lower]) {
+          if (ch === ch.toUpperCase()) w += weights[lower];
+          else b += weights[lower];
+        }
+      }
+      return { w, b, diff: w - b };
+    }
+
+    function detectOpeningFromMoves(sanMovesArray, headers = {}) {
+      let matchedEco = headers.ECO || 'A00';
+      let matchedName = '';
+
+      // 1. Check PGN headers first (`ECOUrl` or `Opening`)
+      if (headers.ECOUrl) {
+        const slug = headers.ECOUrl.split('/openings/')[1];
+        if (slug) {
+          matchedName = decodeURIComponent(slug)
+            .replace(/-\d+\..*$/, '')
+            .replace(/-/g, ' ')
+            .trim();
+        }
+      }
+      if (!matchedName && headers.Opening) {
+        matchedName = headers.Opening;
+      }
+
+      // 2. Match against built-in opening book prefix tree
+      const moveStr = sanMovesArray.join(' ');
+      let bookMatch = null;
+      for (const entry of OPENING_BOOK) {
+        if (moveStr.startsWith(entry.moves)) {
+          if (!bookMatch || entry.moves.length > bookMatch.moves.length) {
+            bookMatch = entry;
+          }
+        }
+      }
+
+      if (bookMatch) {
+        matchedEco = bookMatch.eco;
+        if (!matchedName) matchedName = bookMatch.name;
+      }
+
+      return {
+        eco: matchedEco,
+        name: matchedName || (bookMatch ? bookMatch.name : 'Standard Chess Opening'),
+        bookDepthPly: bookMatch ? bookMatch.moves.split(' ').length : 0
+      };
+    }
+
+    function classifyGameMoves() {
+      const counts = {
+        w: {},
+        b: {}
+      };
+      CLASSIFICATION_ORDER.forEach(k => {
+        counts.w[k] = 0;
+        counts.b[k] = 0;
+      });
+
+      const winLossDeltas = { w: [], b: [] };
+      const phaseLoss = {
+        open: { w: [], b: [] },
+        mid: { w: [], b: [] },
+        end: { w: [], b: [] }
+      };
+
+      const sanList = state.positions.slice(1).map(p => p.san);
+      const openingInfo = detectOpeningFromMoves(sanList, state.pgnHeaders);
+      state.openingEco = openingInfo.eco;
+      state.openingName = openingInfo.name;
+
+      for (let ply = 1; ply < state.positions.length; ply++) {
+        const prev = state.positions[ply - 1];
+        const curr = state.positions[ply];
+        const mover = curr.mover; // 'w' or 'b'
+
+        // Win probabilities from the mover's perspective before and after the move
+        const wpBeforeWhite = cpToWinProbability(prev.evalCp);
+        const wpAfterWhite = cpToWinProbability(curr.evalCp);
+
+        const wpBefore = mover === 'w' ? wpBeforeWhite : (100 - wpBeforeWhite);
+        const wpAfter = mover === 'w' ? wpAfterWhite : (100 - wpAfterWhite);
+        const wpLoss = Math.max(0, wpBefore - wpAfter);
+        const wpGain = Math.max(0, wpAfter - wpBefore);
+
+        winLossDeltas[mover].push(wpLoss);
+
+        // Phase bucket
+        if (ply <= 16) phaseLoss.open[mover].push(wpLoss);
+        else if (ply <= 44) phaseLoss.mid[mover].push(wpLoss);
+        else phaseLoss.end[mover].push(wpLoss);
+
+        // Determine if played move matches engine best move
+        const playedUci = curr.uci;
+        const engineBestUci = prev.bestMoveUci;
+        const isEngineChoice = engineBestUci && playedUci === engineBestUci;
+
+        // Material delta inspection for Brilliant sacrifices
+        const matBefore = countMaterialByColor(prev.fen);
+        const matAfter = countMaterialByColor(curr.fen);
+        const moverMatBefore = mover === 'w' ? matBefore.w : matBefore.b;
+        const moverMatAfter = mover === 'w' ? matAfter.w : matAfter.b;
+
+        // Check if next move opponent captures or if mover sacrificed material or played a check/tactical blow
+        const isCheckmate = curr.san.includes('#');
+        const isCheck = curr.san.includes('+');
+        const pieceMoved = curr.moveObj ? curr.moveObj.piece : 'p';
+
+        // Check if mover leaves a piece en prise / sacrifices in a winning/strong position
+        let isSacrifice = false;
+        if (ply + 1 < state.positions.length) {
+          const nextPos = state.positions[ply + 1];
+          const matNext = countMaterialByColor(nextPos.fen);
+          const moverMatNext = mover === 'w' ? matNext.w : matNext.b;
+          if (moverMatNext < moverMatBefore - 1 && wpAfter >= 58 && wpLoss < 4) {
+            isSacrifice = true;
+          }
+        }
+        if ((curr.san.includes('Bxf7+') || curr.san.includes('Bg6') || (isCheck && pieceMoved !== 'p' && wpAfter > 68 && wpLoss < 3)) && ply > 6) {
+          if (isSacrifice || (!isEngineChoice && wpLoss < 2.5 && wpAfter > 72)) {
+            isSacrifice = true;
+          }
+        }
+
+        let category = 'good';
+
+        // 1. Opening Book check
+        if (ply <= Math.max(6, openingInfo.bookDepthPly) && wpLoss < 4.5) {
+          category = 'book';
+        }
+        // 2. Checkmate or Brilliant Sacrifice
+        else if (isSacrifice && wpLoss < 3.5 && wpAfter >= 55) {
+          category = 'brilliant';
+        }
+        // 3. Blunder
+        else if (wpLoss >= 20) {
+          category = 'blunder';
+        }
+        // 4. Miss (Opponent made a mistake/blunder last turn and mover lost >= 12% win prob)
+        else if (ply > 1 && ['mistake', 'blunder'].includes(prev.classification) && wpLoss >= 11) {
+          category = 'miss';
+        }
+        // 5. Mistake
+        else if (wpLoss >= 10) {
+          category = 'mistake';
+        }
+        // 6. Inaccuracy
+        else if (wpLoss >= 5) {
+          category = 'inaccuracy';
+        }
+        // 7. Great Move (Critical swing or finding only winning resource)
+        else if ((wpGain >= 12 || (wpAfter >= 65 && wpBefore <= 55) || isCheckmate) && wpLoss < 2) {
+          category = 'great';
+        }
+        // 8. Best Move
+        else if (isEngineChoice || wpLoss <= 0.8) {
+          category = 'best';
+        }
+        // 9. Excellent Move
+        else if (wpLoss <= 2.4) {
+          category = 'excellent';
+        }
+        // 10. Good Move
+        else {
+          category = 'good';
+        }
+
+        curr.classification = category;
+        counts[mover][category] = (counts[mover][category] || 0) + 1;
+
+        // Convert engine best move UCI to SAN for Coach Banner
+        curr.bestMoveSanAtPrev = uciToSan(prev.fen, prev.bestMoveUci) || curr.san;
+        curr.coachText = generateCoachExplanation(curr, prev, wpLoss);
+      }
+
+      // Compute Accuracy % for White and Black
+      const calcAccuracy = (losses) => {
+        if (!losses.length) return 100;
+        const moveScores = losses.map(loss => 103.1668 * Math.exp(-0.04354 * loss) - 3.1669);
+        const avg = moveScores.reduce((a, b) => a + Math.max(0, Math.min(100, b)), 0) / moveScores.length;
+        return Math.round(avg * 10) / 10;
+      };
+
+      const wAcc = calcAccuracy(winLossDeltas.w);
+      const bAcc = calcAccuracy(winLossDeltas.b);
+
+      const baseW = parseInt(state.whitePlayer.rating, 10) || 1500;
+      const baseB = parseInt(state.blackPlayer.rating, 10) || 1500;
+
+      const estW = Math.max(600, Math.min(2950, Math.round(baseW + (wAcc - 78) * 18)));
+      const estB = Math.max(600, Math.min(2950, Math.round(baseB + (bAcc - 78) * 18)));
+
+      const gradePhase = (arr) => {
+        if (!arr.length) return '—';
+        const acc = calcAccuracy(arr);
+        if (acc >= 93) return '★ Best';
+        if (acc >= 84) return '👍 Great';
+        if (acc >= 72) return '✓ Good';
+        if (acc >= 58) return '?! Shaky';
+        return '?? Poor';
+      };
+
+      state.summary = {
+        whiteAccuracy: wAcc,
+        blackAccuracy: bAcc,
+        whiteEstRating: estW,
+        blackEstRating: estB,
+        counts,
+        phases: {
+          open: { w: gradePhase(phaseLoss.open.w), b: gradePhase(phaseLoss.open.b) },
+          mid: { w: gradePhase(phaseLoss.mid.w), b: gradePhase(phaseLoss.mid.b) },
+          end: { w: gradePhase(phaseLoss.end.w), b: gradePhase(phaseLoss.end.b) }
+        }
+      };
+
+      renderSummaryPanel();
+      renderMoveListTable();
+      renderBoardAtPly(state.currentPly);
+      drawEvaluationGraph();
+    }
+
+    function uciToSan(fen, uci) {
+      if (!uci || uci.length < 4) return '';
+      try {
+        const c = new Chess(fen);
+        const from = uci.slice(0, 2);
+        const to = uci.slice(2, 4);
+        const promotion = uci.length > 4 ? uci[4] : undefined;
+        const m = c.move({ from, to, promotion });
+        return m ? m.san : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function generateCoachExplanation(curr, prev, wpLoss) {
+      const sideName = curr.mover === 'w' ? 'White' : 'Black';
+      const san = curr.san;
+      const bestSan = curr.bestMoveSanAtPrev || san;
+      const cat = curr.classification;
+
+      if (cat === 'book') {
+        return `${san} is a standard Book move in the ${state.openingName}, developing smoothly while contesting key central squares.`;
+      }
+      if (cat === 'brilliant') {
+        return `Brilliant sacrifice!! ${sideName} plays ${san}, offering material to rip open the opponent's king defenses and seize a decisive tactical initiative!`;
+      }
+      if (cat === 'great') {
+        if (san.includes('#')) {
+          return `${san} delivers checkmate and finishes the game with precision!`;
+        }
+        return `Great find! ${san} spots the critical tactical resource in the position and keeps maximum pressure on the opponent.`;
+      }
+      if (cat === 'best') {
+        if (san.includes('x')) {
+          return `${san} is the engine's top choice, winning material or trading favorably while keeping a strong grip on the board.`;
+        }
+        return `${san} is the Best move, improving piece coordination and matching Stockfish's #1 recommendation.`;
+      }
+      if (cat === 'excellent') {
+        return `${san} is an Excellent move. ${bestSan !== san ? `It performs nearly identically to ${bestSan}.` : 'It keeps your advantage intact.'}`;
+      }
+      if (cat === 'good') {
+        return `${san} is a solid, playable move.${bestSan !== san ? ` ${bestSan} was slightly more accurate.` : ''}`;
+      }
+      if (cat === 'inaccuracy') {
+        return `${san} is an Inaccuracy. Better was ${bestSan}, which would have fought harder for the initiative.`;
+      }
+      if (cat === 'mistake') {
+        return `${san} is a Mistake that drops win probability by ${wpLoss.toFixed(0)}%. Playing ${bestSan} was necessary to hold the balance.`;
+      }
+      if (cat === 'miss') {
+        return `${san} misses a golden tactical opportunity to punish the opponent's previous slip! ${bestSan} was the winning continuation.`;
+      }
+      if (cat === 'blunder') {
+        return `Blunder! ${san} allows a crushing tactical response and loses significant evaluation. ${bestSan} was required to stay safe.`;
+      }
+      return `${sideName} played ${san}.`;
+    }
+
+    /*************************************************************************
+     * 10. LOAD PGN & RUN ENGINE ANALYSIS PIPELINE
+     *************************************************************************/
+    function loadPgnGame(pgnString, customMeta = null) {
+      stopAutoPlay();
+      state.isCustomExploration = false;
+      document.getElementById('returnToGameLineBtn').classList.add('hidden');
+
+      const chess = new Chess();
+      // Extract headers manually as well for full reliability
+      const headers = {};
+      const headerRegex = /\[(\w+)\s+"([^"]*)"\]/g;
+      let match;
+      while ((match = headerRegex.exec(pgnString)) !== null) {
+        headers[match[1]] = match[2];
+      }
+
+      const loaded = chess.load_pgn(pgnString, { sloppy: true });
+      if (!loaded) {
+        // Fallback: strip comments/headers and load moves
+        chess.reset();
+        const body = pgnString.replace(/\[[^\]]*\]/g, ' ').replace(/\{[^}]*\}/g, ' ');
+        const tokens = body.split(/\s+/).filter(Boolean);
+        for (const tok of tokens) {
+          if (/^\d+\.+$/.test(tok) || ['1-0', '0-1', '1/2-1/2', '*'].includes(tok)) continue;
+          chess.move(tok, { sloppy: true });
+        }
+      }
+
+      const historyVerbose = chess.history({ verbose: true });
+      if (historyVerbose.length === 0) {
+        showToast('Could not parse moves from PGN. Please check the PGN format.', 'error');
+        return;
+      }
+
+      state.pgnHeaders = headers;
+      state.whitePlayer = {
+        username: (customMeta && customMeta.whiteName) || headers.White || 'White Player',
+        rating: (customMeta && customMeta.whiteRating) || headers.WhiteElo || '1500',
+        avatar: (customMeta && customMeta.whiteAvatar) || ''
+      };
+      state.blackPlayer = {
+        username: (customMeta && customMeta.blackName) || headers.Black || 'Black Player',
+        rating: (customMeta && customMeta.blackRating) || headers.BlackElo || '1500',
+        avatar: (customMeta && customMeta.blackAvatar) || ''
+      };
+
+      // Flip board automatically if the searched Chess.com user is playing Black
+      if (
+        state.searchedUsername &&
+        state.blackPlayer.username.toLowerCase() === state.searchedUsername.toLowerCase()
+      ) {
+        state.isFlipped = true;
+      } else if (
+        state.searchedUsername &&
+        state.whitePlayer.username.toLowerCase() === state.searchedUsername.toLowerCase()
+      ) {
+        state.isFlipped = false;
+      }
+
+      // Replay from scratch to build state.positions
+      const replay = new Chess();
+      const positions = [];
+
+      // Ply 0 (Starting position)
+      const initFast = evaluatePositionBuiltIn(replay.fen(), 2);
+      positions.push({
+        ply: 0,
+        fen: replay.fen(),
+        moveObj: null,
+        san: 'Start',
+        uci: '',
+        mover: null,
+        evalCp: 25,
+        mate: null,
+        bestMoveUci: initFast.bestMoveUci || 'e2e4',
+        bestMoveSanAtPrev: 'e4',
+        classification: 'book',
+        coachText: 'Game loaded! Step through the moves or click Review to run deeper Stockfish analysis.'
+      });
+
+      for (let i = 0; i < historyVerbose.length; i++) {
+        const mv = historyVerbose[i];
+        replay.move(mv);
+        const fen = replay.fen();
+        const fastEval = evaluatePositionBuiltIn(fen, 2);
+        positions.push({
+          ply: i + 1,
+          fen,
+          moveObj: mv,
+          san: mv.san,
+          uci: `${mv.from}${mv.to}${mv.promotion || ''}`,
+          mover: mv.color,
+          evalCp: fastEval.evalCp,
+          mate: fastEval.mate,
+          bestMoveUci: fastEval.bestMoveUci,
+          bestMoveSanAtPrev: '',
+          classification: 'best',
+          coachText: ''
+        });
+      }
+
+      state.positions = positions;
+      state.currentPly = 0;
+
+      // Classify immediately with built-in tactical evaluation, then optionally refine with Stockfish Worker
+      classifyGameMoves();
+      updatePlayerHeadersUI();
+      renderBoardAtPly(0);
+
+      // Run full selected engine review pass
+      runFullGameReview();
+    }
+
+    async function runFullGameReview() {
+      const abortId = ++state.analysisAbortId;
+      const depthSelect = document.getElementById('analysisDepthSelect').value;
+
+      const progWrap = document.getElementById('analysisProgressWrapper');
+      const progBar = document.getElementById('analysisProgressBar');
+      const progPct = document.getElementById('analysisProgressPct');
+      const progLabel = document.getElementById('analysisProgressLabel');
+
+      progWrap.classList.remove('hidden');
+      progBar.style.width = '0%';
+      progPct.textContent = '0%';
+
+      const total = state.positions.length;
+
+      for (let i = 0; i < total; i++) {
+        if (abortId !== state.analysisAbortId) return;
+
+        const pos = state.positions[i];
+        const pct = Math.round(((i + 1) / total) * 100);
+        progBar.style.width = `${pct}%`;
+        progPct.textContent = `${pct}%`;
+        progLabel.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Reviewing move ${i} of ${total - 1}...`;
+
+        if (depthSelect === 'fast') {
+          const res = evaluatePositionBuiltIn(pos.fen, 2);
+          pos.evalCp = res.evalCp;
+          pos.mate = res.mate;
+          pos.bestMoveUci = res.bestMoveUci;
+          // Yield every 8 plies to keep UI 60fps
+          if (i % 8 === 0) await new Promise(r => setTimeout(r, 12));
+        } else {
+          const depthNum = parseInt(depthSelect, 10) || 12;
+          const res = await evaluateFenWithStockfish(pos.fen, depthNum);
+          if (abortId !== state.analysisAbortId) return;
+          pos.evalCp = res.evalCp;
+          pos.mate = res.mate;
+          pos.bestMoveUci = res.bestMoveUci;
+        }
+      }
+
+      if (abortId !== state.analysisAbortId) return;
+      progWrap.classList.add('hidden');
+      classifyGameMoves();
+      updatePlayerHeadersUI();
+      showToast(`Game Review Complete! White: ${state.summary.whiteAccuracy}% | Black: ${state.summary.blackAccuracy}%`, 'success');
+    }
+
+    /*************************************************************************
+     * 11. RENDER INTERACTIVE CHESSBOARD, ARROWS, BADGES & EVAL BAR
+     *************************************************************************/
+    function squareToCoords(sq, isFlipped) {
+      const file = sq.charCodeAt(0) - 97; // 0..7 (a..h)
+      const rank = 8 - parseInt(sq[1], 10); // 0..7 (8..1)
+      const col = isFlipped ? 7 - file : file;
+      const row = isFlipped ? 7 - rank : rank;
+      return { col, row };
+    }
+
+    function renderBoardAtPly(ply) {
+      if (!state.positions.length) return;
+      ply = Math.max(0, Math.min(state.positions.length - 1, ply));
+      state.currentPly = ply;
+      state.selectedSquare = null;
+      state.isCustomExploration = false;
+      document.getElementById('returnToGameLineBtn').classList.add('hidden');
+
+      const pos = state.positions[ply];
+      const prev = ply > 0 ? state.positions[ply - 1] : null;
+
+      renderFenOnBoard(pos.fen, pos.moveObj, prev ? prev.bestMoveUci : '', pos.classification);
+      updateEvalBarUI(pos.evalCp, pos.mate);
+      updateCoachCardUI(pos, prev);
+      highlightActiveMoveInTable(ply);
+      drawEvaluationGraph();
+
+      document.getElementById('currentPlyLabel').textContent =
+        `Move ${Math.ceil(ply / 2)} (${ply} / ${state.positions.length - 1})`;
+    }
+
+    function renderFenOnBoard(fen, lastMoveObj, bestMoveUci, classificationKey) {
+      const boardSquaresEl = document.getElementById('boardSquares');
+      const arrowsSvgEl = document.getElementById('boardArrowsSvg');
+      const badgeOverlayEl = document.getElementById('boardBadgeOverlay');
+
+      boardSquaresEl.innerHTML = '';
+      arrowsSvgEl.innerHTML = '';
+      badgeOverlayEl.innerHTML = '';
+
+      const chess = state.isCustomExploration && state.customExplorationChess
+        ? state.customExplorationChess
+        : new Chess(fen);
+      const board = chess.board();
+      const legalMovesFromSelected = state.selectedSquare
+        ? chess.moves({ square: state.selectedSquare, verbose: true })
+        : [];
+      const legalDestMap = {};
+      legalMovesFromSelected.forEach(m => { legalDestMap[m.to] = m; });
+
+      for (let visualRow = 0; visualRow < 8; visualRow++) {
+        for (let visualCol = 0; visualCol < 8; visualCol++) {
+          const r = state.isFlipped ? 7 - visualRow : visualRow;
+          const c = state.isFlipped ? 7 - visualCol : visualCol;
+
+          const fileChar = String.fromCharCode(97 + c);
+          const rankChar = String(8 - r);
+          const sqName = `${fileChar}${rankChar}`;
+
+          const isLight = (r + c) % 2 === 0;
+          const isLastFrom = lastMoveObj && lastMoveObj.from === sqName;
+          const isLastTo = lastMoveObj && lastMoveObj.to === sqName;
+          const isSelected = state.selectedSquare === sqName;
+
+          let bgStyle = isLight ? '#ebecd0' : '#739552';
+          if (isLastFrom || isLastTo || isSelected) {
+            bgStyle = isLight ? '#f5f682' : '#b9ca43';
+          }
+
+          const sqDiv = document.createElement('div');
+          sqDiv.className = 'relative flex items-center justify-center cursor-pointer select-none';
+          sqDiv.style.backgroundColor = bgStyle;
+          sqDiv.dataset.square = sqName;
+
+          // Rank coordinate on left edge
+          if (visualCol === 0) {
+            const rankLbl = document.createElement('span');
+            rankLbl.className = 'absolute top-0.5 left-1 text-[10px] font-extrabold leading-none pointer-events-none';
+            rankLbl.style.color = isLight ? '#739552' : '#ebecd0';
+            rankLbl.textContent = rankChar;
+            sqDiv.appendChild(rankLbl);
+          }
+
+          // File coordinate on bottom edge
+          if (visualRow === 7) {
+            const fileLbl = document.createElement('span');
+            fileLbl.className = 'absolute bottom-0.5 right-1 text-[10px] font-extrabold leading-none pointer-events-none';
+            fileLbl.style.color = isLight ? '#739552' : '#ebecd0';
+            fileLbl.textContent = fileChar;
+            sqDiv.appendChild(fileLbl);
+          }
+
+          // Piece SVG
+          const piece = board[r][c];
+          if (piece) {
+            const key = `${piece.color}${piece.type.toUpperCase()}`;
+            const pieceWrap = document.createElement('div');
+            pieceWrap.className = 'w-[84%] h-[84%] pointer-events-none transition-transform duration-150';
+            pieceWrap.innerHTML = PIECE_SVGS[key] || '';
+            sqDiv.appendChild(pieceWrap);
+          }
+
+          // Legal move dot / capture ring
+          if (legalDestMap[sqName]) {
+            const indicator = document.createElement('div');
+            if (piece) {
+              indicator.className = 'absolute inset-1 rounded-full border-[4px] border-black/25 pointer-events-none';
+            } else {
+              indicator.className = 'w-3.5 h-3.5 rounded-full bg-black/25 pointer-events-none';
+            }
+            sqDiv.appendChild(indicator);
+          }
+
+          sqDiv.addEventListener('click', () => handleSquareClick(sqName, fen));
+          boardSquaresEl.appendChild(sqDiv);
+        }
+      }
+
+      // Render Move Classification Badge on Destination Square
+      if (lastMoveObj && classificationKey && CLASSIFICATIONS[classificationKey] && !state.isCustomExploration) {
+        const meta = CLASSIFICATIONS[classificationKey];
+        const { col, row } = squareToCoords(lastMoveObj.to, state.isFlipped);
+        const badge = document.createElement('div');
+        badge.className = 'badge-pop absolute w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[11px] sm:text-xs font-black text-white shadow-lg border-2 border-[#1f1e1b]';
+        badge.style.backgroundColor = meta.color;
+        badge.style.left = `calc(${(col + 1) * 12.5}% - 22px)`;
+        badge.style.top = `calc(${row * 12.5}% - 4px)`;
+        badge.textContent = meta.symbol;
+        badgeOverlayEl.appendChild(badge);
+      }
+
+      // Render Best Move Arrow (Green) & Played Move Arrow (if suboptimal)
+      if (!state.isCustomExploration && lastMoveObj) {
+        const playedUci = `${lastMoveObj.from}${lastMoveObj.to}`;
+        // Draw engine best move arrow if different from played move and move was not Best/Book/Brilliant
+        if (
+          bestMoveUci &&
+          bestMoveUci.length >= 4 &&
+          bestMoveUci.slice(0, 4) !== playedUci &&
+          !['best', 'brilliant', 'great', 'book'].includes(classificationKey)
+        ) {
+          drawBoardArrow(
+            arrowsSvgEl,
+            bestMoveUci.slice(0, 2),
+            bestMoveUci.slice(2, 4),
+            '#81b64c',
+            0.88
+          );
+        }
+        // Also draw played move arrow in classification color if Mistake/Blunder/Brilliant
+        if (['brilliant', 'mistake', 'miss', 'blunder'].includes(classificationKey)) {
+          const colHex = CLASSIFICATIONS[classificationKey].color;
+          drawBoardArrow(arrowsSvgEl, lastMoveObj.from, lastMoveObj.to, colHex, 0.72);
+        }
+      }
+    }
+
+    function drawBoardArrow(svgEl, fromSq, toSq, colorHex, opacity = 0.85) {
+      const from = squareToCoords(fromSq, state.isFlipped);
+      const to = squareToCoords(toSq, state.isFlipped);
+
+      const x1 = from.col * 100 + 50;
+      const y1 = from.row * 100 + 50;
+      const x2 = to.col * 100 + 50;
+      const y2 = to.row * 100 + 50;
+
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy);
+      if (len === 0) return;
+
+      const ux = dx / len;
+      const uy = dy / len;
+
+      // Shorten line so arrowhead lands cleanly in center of target square
+      const headLen = 34;
+      const endX = x2 - ux * headLen;
+      const endY = y2 - uy * headLen;
+
+      const perpX = -uy;
+      const perpY = ux;
+
+      const p1x = x2;
+      const p1y = y2;
+      const p2x = endX + perpX * 22;
+      const p2y = endY + perpY * 22;
+      const p3x = endX - perpX * 22;
+      const p3y = endY - perpY * 22;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('opacity', String(opacity));
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(x1));
+      line.setAttribute('y1', String(y1));
+      line.setAttribute('x2', String(endX));
+      line.setAttribute('y2', String(endY));
+      line.setAttribute('stroke', colorHex);
+      line.setAttribute('stroke-width', '16');
+      line.setAttribute('stroke-linecap', 'round');
+
+      const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      head.setAttribute('points', `${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`);
+      head.setAttribute('fill', colorHex);
+
+      g.appendChild(line);
+      g.appendChild(head);
+      svgEl.appendChild(g);
+    }
+
+    function handleSquareClick(sqName, currentFen) {
+      if (!state.isCustomExploration) {
+        state.customExplorationChess = new Chess(currentFen);
+      }
+      const chess = state.customExplorationChess;
+
+      if (state.selectedSquare) {
+        const moveAttempt = chess.move({
+          from: state.selectedSquare,
+          to: sqName,
+          promotion: 'q'
+        });
+
+        if (moveAttempt) {
+          state.isCustomExploration = true;
+          state.selectedSquare = null;
+          document.getElementById('returnToGameLineBtn').classList.remove('hidden');
+
+          playChessSound(moveAttempt.captured ? 'capture' : 'move');
+          const fast = evaluatePositionBuiltIn(chess.fen(), 2);
+          renderFenOnBoard(chess.fen(), moveAttempt, fast.bestMoveUci, 'best');
+          updateEvalBarUI(fast.evalCp, fast.mate);
+
+          document.getElementById('coachTitleBadge').textContent = 'Custom Variation';
+          document.getElementById('coachMoveSan').textContent = moveAttempt.san;
+          document.getElementById('coachExplanationText').textContent =
+            `Exploring custom move ${moveAttempt.san}. Best response here is ${uciToSan(chess.fen(), fast.bestMoveUci) || 'developing'}. Click "Back to Game" below the board to return to the reviewed game.`;
+          return;
+        }
+      }
+
+      // Select piece if it belongs to side to move
+      const piece = chess.get(sqName);
+      if (piece && piece.color === chess.turn()) {
+        state.selectedSquare = sqName;
+      } else {
+        state.selectedSquare = null;
+      }
+
+      const activePos = state.positions[state.currentPly];
+      renderFenOnBoard(
+        chess.fen(),
+        state.isCustomExploration ? null : activePos.moveObj,
+        '',
+        state.isCustomExploration ? null : activePos.classification
+      );
+    }
+
+    /*************************************************************************
+     * 12. UPDATE EVAL BAR, PLAYER HEADERS, COACH BOX & SUMMARY TABLE
+     *************************************************************************/
+    function updateEvalBarUI(evalCp, mate) {
+      // Calculate White's visual percentage (5% to 95%)
+      const whiteWinPct = Math.max(4, Math.min(96, cpToWinProbability(evalCp)));
+      const blackHeightPct = state.isFlipped ? whiteWinPct : (100 - whiteWinPct);
+
+      const darkFill = document.getElementById('evalBarDarkFill');
+      const lightFill = document.getElementById('evalBarLightFill');
+      const scoreTop = document.getElementById('evalScoreTop');
+      const scoreBottom = document.getElementById('evalScoreBottom');
+
+      if (state.isFlipped) {
+        darkFill.className = 'w-full bg-[#e8e6e3] eval-fill-transition';
+        lightFill.className = 'w-full bg-[#403d39] flex-1 eval-fill-transition';
+      } else {
+        darkFill.className = 'w-full bg-[#403d39] eval-fill-transition';
+        lightFill.className = 'w-full bg-[#e8e6e3] flex-1 eval-fill-transition';
+      }
+
+      darkFill.style.height = `${blackHeightPct}%`;
+
+      let displayScore = '';
+      if (mate !== null && mate !== undefined) {
+        displayScore = `M${Math.abs(mate)}`;
+      } else {
+        const pawns = (evalCp / 100).toFixed(1);
+        displayScore = evalCp >= 0 ? `+${pawns}` : `${pawns}`;
+      }
+
+      const whiteAdvantage = evalCp >= 0;
+      const showAtBottom = (!state.isFlipped && whiteAdvantage) || (state.isFlipped && !whiteAdvantage);
+
+      if (showAtBottom) {
+        scoreBottom.textContent = displayScore;
+        scoreBottom.classList.remove('hidden');
+        scoreBottom.style.color = state.isFlipped ? '#e5e5e5' : '#1f1e1b';
+        scoreTop.classList.add('hidden');
+      } else {
+        scoreTop.textContent = displayScore;
+        scoreTop.classList.remove('hidden');
+        scoreTop.style.color = state.isFlipped ? '#1f1e1b' : '#e5e5e5';
+        scoreBottom.classList.add('hidden');
+      }
+    }
+
+    function updatePlayerHeadersUI() {
+      const topPlayer = state.isFlipped ? state.whitePlayer : state.blackPlayer;
+      const bottomPlayer = state.isFlipped ? state.blackPlayer : state.whitePlayer;
+      const topAcc = state.isFlipped ? state.summary.whiteAccuracy : state.summary.blackAccuracy;
+      const bottomAcc = state.isFlipped ? state.summary.blackAccuracy : state.summary.whiteAccuracy;
+
+      document.getElementById('topPlayerName').textContent = topPlayer.username;
+      document.getElementById('topPlayerRating').textContent = `(${topPlayer.rating})`;
+      const topPill = document.getElementById('topPlayerAccuracyPill');
+      topPill.textContent = `${topAcc}%`;
+      topPill.classList.remove('hidden');
+
+      document.getElementById('bottomPlayerName').textContent = bottomPlayer.username;
+      document.getElementById('bottomPlayerRating').textContent = `(${bottomPlayer.rating})`;
+      const botPill = document.getElementById('bottomPlayerAccuracyPill');
+      botPill.textContent = `${bottomAcc}%`;
+      botPill.classList.remove('hidden');
+
+      // Avatars
+      const defaultTop = state.isFlipped
+        ? `https://placehold.co/64x64/81b64c/ffffff?text=${encodeURIComponent(topPlayer.username[0] || 'W')}`
+        : `https://placehold.co/64x64/383633/ffffff?text=${encodeURIComponent(topPlayer.username[0] || 'B')}`;
+      const defaultBot = state.isFlipped
+        ? `https://placehold.co/64x64/383633/ffffff?text=${encodeURIComponent(bottomPlayer.username[0] || 'B')}`
+        : `https://placehold.co/64x64/81b64c/ffffff?text=${encodeURIComponent(bottomPlayer.username[0] || 'W')}`;
+
+      document.getElementById('topPlayerAvatar').src = topPlayer.avatar || defaultTop;
+      document.getElementById('bottomPlayerAvatar').src = bottomPlayer.avatar || defaultBot;
+
+      // Opening Banner
+      document.getElementById('ecoCodeBadge').textContent = state.openingEco || 'A00';
+      document.getElementById('openingNameText').textContent = state.openingName || 'Chess Opening';
+    }
+
+    function updateCoachCardUI(pos, prev) {
+      const meta = CLASSIFICATIONS[pos.classification] || CLASSIFICATIONS.best;
+      const badgeEl = document.getElementById('coachMoveBadge');
+      const titleEl = document.getElementById('coachTitleBadge');
+      const sanEl = document.getElementById('coachMoveSan');
+      const evalPill = document.getElementById('coachEvalPill');
+      const textEl = document.getElementById('coachExplanationText');
+      const actionRow = document.getElementById('coachActionRow');
+
+      badgeEl.style.backgroundColor = meta.color;
+      badgeEl.textContent = meta.symbol;
+
+      titleEl.style.color = meta.color;
+      titleEl.textContent = pos.ply === 0 ? 'Game Ready' : meta.label;
+      sanEl.textContent = pos.ply === 0 ? 'Start' : `${Math.ceil(pos.ply / 2)}${pos.mover === 'w' ? '.' : '...'} ${pos.san}`;
+
+      const pawns = (pos.evalCp / 100).toFixed(1);
+      evalPill.textContent = pos.mate
+        ? `M${Math.abs(pos.mate)}`
+        : (pos.evalCp >= 0 ? `+${pawns}` : `${pawns}`);
+      if (pos.evalCp >= 0) {
+        evalPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-100 text-stone-900';
+      } else {
+        evalPill.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-800 text-stone-100 border border-stone-600';
+      }
+
+      textEl.textContent = pos.coachText;
+
+      // Show "Preview Best Move" button if the move was suboptimal
+      if (
+        prev &&
+        pos.bestMoveSanAtPrev &&
+        pos.bestMoveSanAtPrev !== pos.san &&
+        ['inaccuracy', 'mistake', 'miss', 'blunder'].includes(pos.classification)
+      ) {
+        actionRow.classList.remove('hidden');
+        actionRow.classList.add('flex');
+        document.getElementById('coachBestMoveSan').textContent = pos.bestMoveSanAtPrev;
+      } else {
+        actionRow.classList.add('hidden');
+        actionRow.classList.remove('flex');
+      }
+
+      // Update Material Advantage Indicators
+      const mat = countMaterialByColor(pos.fen);
+      const topMatEl = document.getElementById('topPlayerMaterial');
+      const botMatEl = document.getElementById('bottomPlayerMaterial');
+      topMatEl.textContent = '';
+      botMatEl.textContent = '';
+
+      if (mat.diff !== 0) {
+        const whiteAhead = mat.diff > 0;
+        const label = `+${Math.abs(mat.diff)}`;
+        if ((whiteAhead && !state.isFlipped) || (!whiteAhead && state.isFlipped)) {
+          botMatEl.textContent = label;
+        } else {
+          topMatEl.textContent = label;
+        }
+      }
+    }
+
+    function renderSummaryPanel() {
+      document.getElementById('summaryWhiteName').textContent = state.whitePlayer.username;
+      document.getElementById('summaryBlackName').textContent = state.blackPlayer.username;
+      document.getElementById('summaryWhiteAccuracy').textContent = `${state.summary.whiteAccuracy}%`;
+      document.getElementById('summaryBlackAccuracy').textContent = `${state.summary.blackAccuracy}%`;
+      document.getElementById('summaryWhiteEstRating').textContent = state.summary.whiteEstRating;
+      document.getElementById('summaryBlackEstRating').textContent = state.summary.blackEstRating;
+
+      const rowsContainer = document.getElementById('classificationBreakdownRows');
+      rowsContainer.innerHTML = '';
+
+      CLASSIFICATION_ORDER.forEach(key => {
+        const meta = CLASSIFICATIONS[key];
+        const wCount = state.summary.counts.w[key] || 0;
+        const bCount = state.summary.counts.b[key] || 0;
+
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-7 items-center py-1 px-2 rounded hover:bg-chess-panel transition';
+        row.innerHTML = `
+          <span class="col-span-2 font-mono font-bold text-left pl-2" style="color:${meta.color}">${wCount}</span>
+          <div class="col-span-3 flex items-center justify-center gap-2">
+            <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0" style="background:${meta.color}">${meta.symbol}</span>
+            <span class="text-stone-200 font-semibold text-xs">${meta.label}</span>
+          </div>
+          <span class="col-span-2 font-mono font-bold text-right pr-2" style="color:${meta.color}">${bCount}</span>
+        `;
+        rowsContainer.appendChild(row);
+      });
+
+      document.getElementById('phaseOpenWhite').textContent = state.summary.phases.open.w;
+      document.getElementById('phaseOpenBlack').textContent = state.summary.phases.open.b;
+      document.getElementById('phaseMidWhite').textContent = state.summary.phases.mid.w;
+      document.getElementById('phaseMidBlack').textContent = state.summary.phases.mid.b;
+      document.getElementById('phaseEndWhite').textContent = state.summary.phases.end.w;
+      document.getElementById('phaseEndBlack').textContent = state.summary.phases.end.b;
+    }
+
+    function renderMoveListTable() {
+      const container = document.getElementById('movesTableContainer');
+      container.innerHTML = '';
+
+      const totalHalfMoves = state.positions.length - 1;
+      document.getElementById('movesTabCount').textContent = Math.ceil(totalHalfMoves / 2);
+
+      for (let ply = 1; ply <= totalHalfMoves; ply += 2) {
+        const moveNum = Math.ceil(ply / 2);
+        const wPos = state.positions[ply];
+        const bPos = state.positions[ply + 1];
+
+        const wMeta = CLASSIFICATIONS[wPos.classification] || CLASSIFICATIONS.good;
+        const bMeta = bPos ? (CLASSIFICATIONS[bPos.classification] || CLASSIFICATIONS.good) : null;
+
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-12 items-center border-b border-chess-border/40 text-xs';
+
+        const numCell = document.createElement('div');
+        numCell.className = 'col-span-2 py-2 px-2.5 font-mono text-stone-400 bg-chess-panelDark/60 text-center';
+        numCell.textContent = `${moveNum}.`;
+
+        const wCell = document.createElement('button');
+        wCell.id = `move-cell-${ply}`;
+        wCell.className = 'col-span-5 py-2 px-2.5 flex items-center justify-between hover:bg-chess-panelLight transition text-left';
+        wCell.innerHTML = `
+          <span class="font-mono font-semibold text-stone-100">${wPos.san}</span>
+          <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white" style="background:${wMeta.color}" title="${wMeta.label}">${wMeta.symbol}</span>
+        `;
+        wCell.addEventListener('click', () => stepToPly(ply));
+
+        const bCell = document.createElement('button');
+        bCell.className = 'col-span-5 py-2 px-2.5 flex items-center justify-between hover:bg-chess-panelLight transition text-left';
+        if (bPos && bMeta) {
+          bCell.id = `move-cell-${ply + 1}`;
+          bCell.innerHTML = `
+            <span class="font-mono font-semibold text-stone-100">${bPos.san}</span>
+            <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white" style="background:${bMeta.color}" title="${bMeta.label}">${bMeta.symbol}</span>
+          `;
+          bCell.addEventListener('click', () => stepToPly(ply + 1));
+        }
+
+        row.appendChild(numCell);
+        row.appendChild(wCell);
+        row.appendChild(bCell);
+        container.appendChild(row);
+      }
+    }
+
+    function highlightActiveMoveInTable(ply) {
+      document.querySelectorAll('.move-cell-active').forEach(el => el.classList.remove('move-cell-active'));
+      const activeEl = document.getElementById(`move-cell-${ply}`);
+      if (activeEl) {
+        activeEl.classList.add('move-cell-active');
+        activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+
+    /*************************************************************************
+     * 13. INTERACTIVE EVALUATION GRAPH (HTML5 Canvas)
+     *************************************************************************/
+    function drawEvaluationGraph() {
+      const canvas = document.getElementById('evalGraphCanvas');
+      if (!canvas || !state.positions.length) return;
+
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const W = rect.width;
+      const H = rect.height;
+      const midY = H / 2;
+
+      // Background (Black side top, White side bottom)
+      ctx.fillStyle = '#262421';
+      ctx.fillRect(0, 0, W, H);
+
+      const n = state.positions.length;
+      if (n < 2) return;
+
+      const getX = (i) => (i / (n - 1)) * W;
+      const getY = (cp) => {
+        const wp = cpToWinProbability(cp); // 0..100
+        return H - (wp / 100) * H;
+      };
+
+      // Fill White advantage curve
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let i = 0; i < n; i++) {
+        ctx.lineTo(getX(i), getY(state.positions[i].evalCp));
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(235, 236, 208, 0.85)';
+      ctx.fill();
+
+      // Center 0.0 equilibrium dashed line
+      ctx.strokeStyle = 'rgba(129, 182, 76, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, midY);
+      ctx.lineTo(W, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Curve stroke
+      ctx.strokeStyle = '#81b64c';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = getX(i);
+        const y = getY(state.positions[i].evalCp);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Plot colored dots for Brilliant, Great, Mistake, Blunder
+      for (let i = 1; i < n; i++) {
+        const cat = state.positions[i].classification;
+        if (['brilliant', 'great', 'mistake', 'blunder'].includes(cat)) {
+          const x = getX(i);
+          const y = getY(state.positions[i].evalCp);
+          ctx.beginPath();
+          ctx.arc(x, y, 3.6, 0, Math.PI * 2);
+          ctx.fillStyle = CLASSIFICATIONS[cat].color;
+          ctx.fill();
+          ctx.strokeStyle = '#111';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      // Current ply vertical cursor line
+      const curX = getX(state.currentPly);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(curX, 0);
+      ctx.lineTo(curX, H);
+      ctx.stroke();
+    }
+
+    /*************************************************************************
+     * 14. CHESS.COM PUBLIC API FETCHER & ARCHIVE BROWSER
+     *************************************************************************/
+    async function fetchChessComPlayerArchives(username) {
+      const cleanUser = username.trim().toLowerCase();
+      if (!cleanUser) {
+        showToast('Please enter a valid Chess.com username.', 'error');
+        return;
+      }
+
+      const fetchBtn = document.getElementById('fetchUserBtn');
+      fetchBtn.disabled = true;
+      fetchBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i><span>Loading...</span>`;
+
+      try {
+        // Fetch profile & archives in parallel
+        const [profileRes, archiveRes] = await Promise.all([
+          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanUser)}`),
+          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(cleanUser)}/games/archives`)
+        ]);
+
+        if (!archiveRes.ok) {
+          throw new Error('Player not found on Chess.com. Check the spelling and try again.');
+        }
+
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          if (profileData.avatar) {
+            state.playerAvatarCache[cleanUser] = profileData.avatar;
+          }
+        }
+
+        const archiveData = await archiveRes.json();
+        const archives = (archiveData.archives || []).slice().reverse();
+
+        if (!archives.length) {
+          throw new Error('No public game archives found for this player.');
+        }
+
+        state.searchedUsername = cleanUser;
+        state.archivesList = archives;
+
+        const archiveSelect = document.getElementById('archiveSelect');
+        archiveSelect.innerHTML = '';
+        archiveSelect.disabled = false;
+
+        archives.forEach((url, idx) => {
+          const parts = url.split('/');
+          const year = parts[parts.length - 2];
+          const month = parts[parts.length - 1];
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const mLabel = monthNames[parseInt(month, 10) - 1] || month;
+
+          const opt = document.createElement('option');
+          opt.value = url;
+          opt.textContent = `${mLabel} ${year}${idx === 0 ? ' (Latest)' : ''}`;
+          archiveSelect.appendChild(opt);
+        });
+
+        await fetchGamesFromArchiveUrl(archives[0]);
+      } catch (err) {
+        showToast(err.message || 'Error fetching from Chess.com API.', 'error');
+      } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><span>Fetch Games</span>`;
+      }
+    }
+
+    async function fetchGamesFromArchiveUrl(archiveUrl) {
+      const listEl = document.getElementById('gamesListContainer');
+      listEl.innerHTML = `
+        <div class="p-8 text-center text-stone-400 text-xs space-y-2">
+          <i class="fa-solid fa-circle-notch fa-spin text-2xl text-chess-green"></i>
+          <p>Downloading games archive from Chess.com...</p>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(archiveUrl);
+        if (!res.ok) throw new Error('Failed to load monthly games archive.');
+        const data = await res.json();
+        const games = (data.games || [])
+          .filter(g => g.pgn && (!g.rules || g.rules === 'chess'))
+          .reverse();
+
+        state.fetchedGames = games;
+        renderFetchedGamesList();
+
+        if (games.length > 0) {
+          selectGameFromArchive(0);
+          showToast(`Loaded ${games.length} games for ${state.searchedUsername}!`, 'success');
+        }
+      } catch (err) {
+        listEl.innerHTML = `<div class="p-5 text-center text-xs text-red-400">${err.message}</div>`;
+      }
+    }
+
+    function parseOpeningFromChessComGame(game) {
+      const pgn = game.pgn || '';
+      const ecoMatch = pgn.match(/\[ECO\s+"([^"]+)"\]/);
+      const ecoUrlMatch = pgn.match(/\[ECOUrl\s+"([^"]+)"\]/);
+      const openingMatch = pgn.match(/\[Opening\s+"([^"]+)"\]/);
+
+      let eco = ecoMatch ? ecoMatch[1] : '';
+      let name = 'Chess Opening';
+
+      if (ecoUrlMatch && ecoUrlMatch[1].includes('/openings/')) {
+        const slug = ecoUrlMatch[1].split('/openings/')[1];
+        name = decodeURIComponent(slug)
+          .replace(/-\d+\..*$/, '')
+          .replace(/-/g, ' ')
+          .trim();
+      } else if (openingMatch) {
+        name = openingMatch[1];
+      }
+      return { eco, name };
+    }
+
+    function renderFetchedGamesList() {
+      const listEl = document.getElementById('gamesListContainer');
+      const tcFilter = state.selectedTimeControl;
+
+      const filtered = state.fetchedGames.filter(g => {
+        if (tcFilter === 'all') return true;
+        return (g.time_class || '').toLowerCase() === tcFilter;
+      });
+
+      document.getElementById('gamesCountBadge').textContent = `${filtered.length} games`;
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `
+          <div class="p-6 text-center text-xs text-stone-400">
+            No games found matching this time control filter in the selected month.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = '';
+      const searchedLower = state.searchedUsername.toLowerCase();
+
+      filtered.forEach((game) => {
+        const origIndex = state.fetchedGames.indexOf(game);
+        const white = game.white || {};
+        const black = game.black || {};
+        const isUserWhite = (white.username || '').toLowerCase() === searchedLower;
+        const userSide = isUserWhite ? white : black;
+
+        let resultBadge = { text: 'Draw', cls: 'bg-stone-600 text-stone-100' };
+        if (userSide.result === 'win') {
+          resultBadge = { text: 'Won', cls: 'bg-chess-green text-white' };
+        } else if (['checkmated', 'timeout', 'resigned', 'abandoned', 'lose'].includes(userSide.result)) {
+          resultBadge = { text: 'Lost', cls: 'bg-[#fa412d] text-white' };
+        }
+
+        const tc = (game.time_class || 'rapid').toLowerCase();
+        let tcIcon = 'fa-stopwatch text-emerald-400';
+        if (tc === 'bullet') tcIcon = 'fa-bolt-lightning text-amber-400';
+        else if (tc === 'blitz') tcIcon = 'fa-fire-flame-curved text-orange-400';
+
+        const opening = parseOpeningFromChessComGame(game);
+        const dateStr = game.end_time
+          ? new Date(game.end_time * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          : '';
+
+        const item = document.createElement('button');
+        item.className = 'w-full text-left p-3 hover:bg-chess-panelLight transition flex flex-col gap-1.5 group focus:outline-none';
+        item.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 text-[11px] font-semibold text-stone-400">
+              <i class="fa-solid ${tcIcon}"></i>
+              <span class="uppercase tracking-wider">${tc}</span>
+              <span>•</span>
+              <span>${dateStr}</span>
+            </div>
+            <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded ${resultBadge.cls}">
+              ${resultBadge.text}
+            </span>
+          </div>
+
+          <div class="space-y-0.5 text-xs">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 truncate">
+                <span class="w-2.5 h-2.5 rounded-sm bg-white border border-stone-700 inline-block shrink-0"></span>
+                <span class="font-bold text-white truncate">${white.username}</span>
+                <span class="font-mono text-[11px] text-stone-400">(${white.rating})</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 truncate">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#1f1e1b] border border-stone-500 inline-block shrink-0"></span>
+                <span class="font-bold text-stone-200 truncate">${black.username}</span>
+                <span class="font-mono text-[11px] text-stone-400">(${black.rating})</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 pt-0.5">
+            <span class="text-[11px] text-[#d5b48f] truncate">
+              <i class="fa-solid fa-book-open mr-1 opacity-75"></i>${opening.eco ? opening.eco + ' ' : ''}${opening.name}
+            </span>
+            <span class="text-[11px] font-bold text-chess-green opacity-0 group-hover:opacity-100 transition shrink-0">
+              Review <i class="fa-solid fa-arrow-right ml-0.5"></i>
+            </span>
+          </div>
+        `;
+
+        item.addEventListener('click', () => selectGameFromArchive(origIndex));
+        listEl.appendChild(item);
+      });
+    }
+
+    function selectGameFromArchive(index) {
+      const game = state.fetchedGames[index];
+      if (!game || !game.pgn) return;
+
+      const wUser = (game.white && game.white.username) || 'White';
+      const bUser = (game.black && game.black.username) || 'Black';
+
+      loadPgnGame(game.pgn, {
+        whiteName: wUser,
+        whiteRating: game.white ? game.white.rating : '',
+        whiteAvatar: state.playerAvatarCache[wUser.toLowerCase()] || '',
+        blackName: bUser,
+        blackRating: game.black ? game.black.rating : '',
+        blackAvatar: state.playerAvatarCache[bUser.toLowerCase()] || ''
+      });
+    }
+
+    function quickSearchUser(username) {
+      document.getElementById('usernameInput').value = username;
+      fetchChessComPlayerArchives(username);
+    }
+
+    /*************************************************************************
+     * 15. PLAYBACK NAVIGATION & KEY MOMENTS STEPPER
+     *************************************************************************/
+    function stepToPly(targetPly) {
+      if (!state.positions.length) return;
+      const clamped = Math.max(0, Math.min(state.positions.length - 1, targetPly));
+      const pos = state.positions[clamped];
+
+      if (clamped > 0 && pos.moveObj) {
+        if (pos.classification === 'brilliant') playChessSound('brilliant');
+        else if (pos.san.includes('+') || pos.san.includes('#')) playChessSound('check');
+        else if (pos.moveObj.captured) playChessSound('capture');
+        else playChessSound('move');
+      } else {
+        playChessSound('move');
+      }
+
+      renderBoardAtPly(clamped);
+    }
+
+    function jumpKeyMoment(direction = 1) {
+      if (!state.positions.length) return;
+      const keyTypes = ['brilliant', 'great', 'inaccuracy', 'mistake', 'miss', 'blunder'];
+      let idx = state.currentPly + direction;
+
+      while (idx >= 1 && idx < state.positions.length) {
+        if (keyTypes.includes(state.positions[idx].classification)) {
+          stepToPly(idx);
+          return;
+        }
+        idx += direction;
+      }
+
+      // Wrap around if none found ahead
+      stepToPly(direction > 0 ? state.positions.length - 1 : 0);
+    }
+
+    function toggleAutoPlay() {
+      if (state.autoPlayTimer) {
+        stopAutoPlay();
+        return;
+      }
+      document.getElementById('playPauseIcon').className = 'fa-solid fa-pause text-sm';
+      state.autoPlayTimer = setInterval(() => {
+        if (state.currentPly >= state.positions.length - 1) {
+          stopAutoPlay();
+          return;
+        }
+        stepToPly(state.currentPly + 1);
+      }, 950);
+    }
+
+    function stopAutoPlay() {
+      if (state.autoPlayTimer) {
+        clearInterval(state.autoPlayTimer);
+        state.autoPlayTimer = null;
+      }
+      const icon = document.getElementById('playPauseIcon');
+      if (icon) icon.className = 'fa-solid fa-play text-sm';
+    }
+
+    function showToast(msg, type = 'info') {
+      const banner = document.getElementById('toastBanner');
+      const icon = document.getElementById('toastIcon');
+      const text = document.getElementById('toastMessage');
+
+      text.textContent = msg;
+      icon.className =
+        type === 'error'
+          ? 'fa-solid fa-triangle-exclamation text-[#fa412d] text-lg'
+          : 'fa-solid fa-circle-check text-chess-green text-lg';
+
+      banner.classList.remove('hidden');
+      banner.classList.add('flex');
+      clearTimeout(banner._hideTimer);
+      banner._hideTimer = setTimeout(() => {
+        banner.classList.add('hidden');
+        banner.classList.remove('flex');
+      }, 4200);
+    }
+
+    /*************************************************************************
+     * 16. EVENT LISTENERS & INITIALIZATION ON WINDOW LOAD
+     *************************************************************************/
+    window.onload = function () {
+      initStockfishWorker();
+
+      // Load built-in Tactical Demo Game immediately so the page is alive
+      loadPgnGame(DEMO_PGN);
+
+      // Search Form
+      document.getElementById('userSearchForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const user = document.getElementById('usernameInput').value;
+        fetchChessComPlayerArchives(user);
+      });
+
+      // Archive Month Dropdown
+      document.getElementById('archiveSelect').addEventListener('change', (e) => {
+        if (e.target.value) fetchGamesFromArchiveUrl(e.target.value);
+      });
+
+      // Time control filter buttons
+      document.querySelectorAll('.tc-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tc-filter-btn').forEach(b => {
+            b.className = 'tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-bg text-stone-300 hover:bg-chess-panelLight transition';
+          });
+          btn.className = 'tc-filter-btn flex-1 py-1 rounded text-[11px] font-semibold bg-chess-green text-white transition';
+          state.selectedTimeControl = btn.dataset.tc;
+          renderFetchedGamesList();
+        });
+      });
+
+      // Playback Buttons
+      document.getElementById('btnFirstMove').addEventListener('click', () => { stopAutoPlay(); stepToPly(0); });
+      document.getElementById('btnPrevMove').addEventListener('click', () => { stopAutoPlay(); stepToPly(state.currentPly - 1); });
+      document.getElementById('btnPlayPause').addEventListener('click', toggleAutoPlay);
+      document.getElementById('btnNextMove').addEventListener('click', () => { stopAutoPlay(); stepToPly(state.currentPly + 1); });
+      document.getElementById('btnLastMove').addEventListener('click', () => { stopAutoPlay(); stepToPly(state.positions.length - 1); });
+      document.getElementById('btnFlipBoard').addEventListener('click', () => {
+        state.isFlipped = !state.isFlipped;
+        updatePlayerHeadersUI();
+        renderBoardAtPly(state.currentPly);
+      });
+
+      document.getElementById('btnNextKeyMoment').addEventListener('click', () => { stopAutoPlay(); jumpKeyMoment(1); });
+      document.getElementById('btnPrevKeyMoment').addEventListener('click', () => { stopAutoPlay(); jumpKeyMoment(-1); });
+
+      // Return to game line from custom sandbox variation
+      document.getElementById('returnToGameLineBtn').addEventListener('click', () => {
+        renderBoardAtPly(state.currentPly);
+      });
+
+      // Preview Best Engine Move button inside Coach Box
+      document.getElementById('playBestMoveBtn').addEventListener('click', () => {
+        if (state.currentPly < 1) return;
+        const prev = state.positions[state.currentPly - 1];
+        if (!prev || !prev.bestMoveUci) return;
+
+        const c = new Chess(prev.fen);
+        const from = prev.bestMoveUci.slice(0, 2);
+        const to = prev.bestMoveUci.slice(2, 4);
+        const promo = prev.bestMoveUci.length > 4 ? prev.bestMoveUci[4] : 'q';
+        const m = c.move({ from, to, promotion: promo });
+        if (m) {
+          state.isCustomExploration = true;
+          state.customExplorationChess = c;
+          document.getElementById('returnToGameLineBtn').classList.remove('hidden');
+          playChessSound(m.captured ? 'capture' : 'move');
+          const fast = evaluatePositionBuiltIn(c.fen(), 2);
+          renderFenOnBoard(c.fen(), m, fast.bestMoveUci, 'best');
+          updateEvalBarUI(fast.evalCp, fast.mate);
+        }
+      });
+
+      // Run Engine Analysis Button
+      document.getElementById('runAnalysisBtn').addEventListener('click', () => {
+        runFullGameReview();
+      });
+
+      // Demo Game Button
+      document.getElementById('loadDemoBtn').addEventListener('click', () => {
+        state.searchedUsername = '';
+        state.isFlipped = false;
+        loadPgnGame(DEMO_PGN);
+      });
+
+      // Sound Toggle
+      document.getElementById('soundToggleBtn').addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        document.getElementById('soundIcon').className = state.soundEnabled
+          ? 'fa-solid fa-volume-high text-xs text-chess-green'
+          : 'fa-solid fa-volume-xmark text-xs text-stone-500';
+      });
+
+      // Tabs Switcher (Summary vs Moves)
+      const tabSummary = document.getElementById('tabBtnSummary');
+      const tabMoves = document.getElementById('tabBtnMoves');
+      const panelSummary = document.getElementById('tabPanelSummary');
+      const panelMoves = document.getElementById('tabPanelMoves');
+
+      tabSummary.addEventListener('click', () => {
+        tabSummary.className = 'flex-1 py-2.5 text-xs font-bold border-b-2 border-chess-green text-white flex items-center justify-center gap-1.5 transition';
+        tabMoves.className = 'flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-stone-400 hover:text-white flex items-center justify-center gap-1.5 transition';
+        panelSummary.classList.remove('hidden');
+        panelMoves.classList.add('hidden');
+      });
+
+      tabMoves.addEventListener('click', () => {
+        tabMoves.className = 'flex-1 py-2.5 text-xs font-bold border-b-2 border-chess-green text-white flex items-center justify-center gap-1.5 transition';
+        tabSummary.className = 'flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-stone-400 hover:text-white flex items-center justify-center gap-1.5 transition';
+        panelMoves.classList.remove('hidden');
+        panelSummary.classList.add('hidden');
+        highlightActiveMoveInTable(state.currentPly);
+      });
+
+      // Evaluation Graph Click & Drag Navigation
+      const evalCanvas = document.getElementById('evalGraphCanvas');
+      let isDraggingGraph = false;
+      const seekFromGraphEvent = (e) => {
+        if (!state.positions.length) return;
+        const rect = evalCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const targetPly = Math.round(relX * (state.positions.length - 1));
+        stepToPly(targetPly);
+      };
+      evalCanvas.addEventListener('mousedown', (e) => { isDraggingGraph = true; seekFromGraphEvent(e); });
+      window.addEventListener('mousemove', (e) => { if (isDraggingGraph) seekFromGraphEvent(e); });
+      window.addEventListener('mouseup', () => { isDraggingGraph = false; });
+      evalCanvas.addEventListener('touchstart', (e) => { isDraggingGraph = true; seekFromGraphEvent(e); }, { passive: true });
+      evalCanvas.addEventListener('touchmove', (e) => { if (isDraggingGraph) seekFromGraphEvent(e); }, { passive: true });
+      evalCanvas.addEventListener('touchend', () => { isDraggingGraph = false; });
+
+      // Paste PGN Modal
+      const pgnModal = document.getElementById('pgnModal');
+      document.getElementById('openPgnModalBtn').addEventListener('click', () => {
+        pgnModal.classList.remove('hidden');
+        pgnModal.classList.add('flex');
+      });
+      const closeModal = () => {
+        pgnModal.classList.add('hidden');
+        pgnModal.classList.remove('flex');
+      };
+      document.getElementById('closePgnModalBtn').addEventListener('click', closeModal);
+      document.getElementById('cancelPgnModalBtn').addEventListener('click', closeModal);
+      document.getElementById('importPgnConfirmBtn').addEventListener('click', () => {
+        const val = document.getElementById('pgnTextarea').value.trim();
+        if (val) {
+          closeModal();
+          loadPgnGame(val);
+        }
+      });
+
+      // Keyboard Shortcuts (Left/Right Arrows, Flip 'F', Space)
+      window.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          stopAutoPlay();
+          stepToPly(state.currentPly + 1);
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          stopAutoPlay();
+          stepToPly(state.currentPly - 1);
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          stopAutoPlay();
+          stepToPly(0);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          stopAutoPlay();
+          stepToPly(state.positions.length - 1);
+        } else if (e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          state.isFlipped = !state.isFlipped;
+          updatePlayerHeadersUI();
+          renderBoardAtPly(state.currentPly);
+        } else if (e.key === ' ') {
+          e.preventDefault();
+          toggleAutoPlay();
+        }
+      });
+
+      // Responsive redraw of Eval Graph on resize
+      window.addEventListener('resize', () => {
+        drawEvaluationGraph();
+      });
+    };
+  </script>
+</body>
+</html>
